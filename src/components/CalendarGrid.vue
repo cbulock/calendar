@@ -16,8 +16,6 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select-day'])
-
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const monthLabel = computed(() => {
@@ -123,12 +121,7 @@ function isToday(date) {
             'day-cell--today': cell.isCurrentMonth && isToday(cell.date),
             'day-cell--has-events': cell.events.length > 0,
           }"
-          role="button"
-          tabindex="0"
-          :aria-label="`Select ${cell.date.toDateString()}`"
-          @click="emit('select-day', cell.date)"
-          @keydown.enter.prevent="emit('select-day', cell.date)"
-          @keydown.space.prevent="emit('select-day', cell.date)"
+          :aria-label="cell.date.toDateString()"
         >
           <span class="day-number">{{ cell.date.getDate() }}</span>
           <ul v-if="cell.events.length > 0" class="event-list">
@@ -205,7 +198,6 @@ function isToday(date) {
   min-height: 4rem;
   border-right: 1px solid #000;
   padding: 0.2rem;
-  cursor: pointer;
   overflow: hidden;
 }
 
