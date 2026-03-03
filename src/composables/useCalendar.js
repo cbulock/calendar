@@ -106,7 +106,10 @@ async function fetchEvents(start, end) {
   await Promise.allSettled(
     enabledSources.value.map(async (source) => {
       const plugin = getPlugin(source.pluginId)
-      if (!plugin) return
+      if (!plugin) {
+        errors.push(`${source.label}: Unknown plugin "${source.pluginId}"`)
+        return
+      }
       try {
         const evts = await plugin.fetchEvents(source.config, dateRange)
         results.push(...evts)
