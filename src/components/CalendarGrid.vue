@@ -116,7 +116,12 @@ function isToday(date) {
             'day-cell--today': cell.isCurrentMonth && isToday(cell.date),
             'day-cell--has-events': cell.events.length > 0,
           }"
+          role="button"
+          tabindex="0"
+          :aria-label="`Select ${cell.date.toDateString()}`"
           @click="emit('select-day', cell.date)"
+          @keydown.enter.prevent="emit('select-day', cell.date)"
+          @keydown.space.prevent="emit('select-day', cell.date)"
         >
           <span class="day-number">{{ cell.date.getDate() }}</span>
           <ul v-if="cell.events.length > 0" class="event-list">
