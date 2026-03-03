@@ -39,7 +39,7 @@
   background: #222;
 }
 
-.nav-link.router-link-active {
+.nav-link.router-link-exact-active {
   color: #fff;
   background: #333;
 }

@@ -149,9 +149,10 @@ describe('DayView', () => {
     mountDayView()
     expect(mockFetchEvents).toHaveBeenCalledOnce()
     const [start, end] = mockFetchEvents.mock.calls[0]
+    const dayAfterTomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2)
     // start should be today's midnight
     expect(start.getDate()).toBe(todayMidnight.getDate())
-    // end should be tomorrow's 23:59:59
-    expect(end.getDate()).toBe(tomorrow.getDate())
+    // end should be day-after-tomorrow's midnight (half-open interval covering all of tomorrow)
+    expect(end.getDate()).toBe(dayAfterTomorrow.getDate())
   })
 })

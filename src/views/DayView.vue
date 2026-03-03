@@ -1,25 +1,35 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EventItem from '../components/EventItem.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 
 const { events, loading, error, fetchEvents, enabledSources } = useCalendar()
 
-const today = new Date()
+const now = ref(new Date())
 
-const todayStart = computed(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()))
-const todayEnd = computed(
-  () => new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59),
+// Refresh `now` every minute so the view rolls over naturally at midnight
+let timerId
+onMounted(() => {
+  timerId = setInterval(() => { now.value = new Date() }, 60_000)
+})
+onUnmounted(() => clearInterval(timerId))
+
+const todayStart = computed(
+  () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate()),
 )
 const tomorrowStart = computed(
-  () => new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1),
+  () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate() + 1),
 )
-const tomorrowEnd = computed(
-  () => new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 23, 59, 59),
+const dayAfterTomorrowStart = computed(
+  () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate() + 2),
 )
 
+// Half-open intervals matching CalendarGrid's overlap logic
+const todayEnd = computed(() => tomorrowStart.value)
+const tomorrowEnd = computed(() => dayAfterTomorrowStart.value)
+
 const todayLabel = computed(() =>
-  today.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' }),
+  now.value.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' }),
 )
 const tomorrowLabel = computed(() =>
   tomorrowStart.value.toLocaleDateString('default', {
