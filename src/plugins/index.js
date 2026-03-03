@@ -37,7 +37,18 @@ import ProtonCalendarPlugin from './ProtonCalendarPlugin.js'
 import OutlookPlugin from './OutlookPlugin.js'
 import FacebookEventsPlugin from './FacebookEventsPlugin.js'
 
-/** @type {Map<string, import('./ProtonCalendarPlugin.js').default>} */
+/**
+ * @typedef {Object} CalendarPlugin
+ * @property {string} id - Unique identifier
+ * @property {string} name - Human-readable name
+ * @property {string} description - Short description
+ * @property {string} icon - Emoji or symbol
+ * @property {Array<{key: string, label: string, type: string, required: boolean, placeholder?: string}>} configFields
+ * @property {function(object): {valid: boolean, errors: string[]}} validateConfig
+ * @property {function(object, {start: Date, end: Date}): Promise<object[]>} fetchEvents
+ */
+
+/** @type {Map<string, CalendarPlugin>} */
 const registry = new Map()
 
 /**
