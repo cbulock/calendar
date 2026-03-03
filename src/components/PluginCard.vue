@@ -136,7 +136,7 @@ function handleAdd() {
 
 .plugin-card__desc-inline {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: #64748b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

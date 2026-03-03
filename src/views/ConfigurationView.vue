@@ -135,7 +135,7 @@ const { sources, addSource, removeSource, toggleSource } = useCalendar()
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 0.9rem;
   padding: 1.5rem 0;
   justify-content: center;

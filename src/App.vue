@@ -1,5 +1,13 @@
+<script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const isCalendarRoute = computed(() => route.name === 'calendar')
+</script>
+
 <template>
-  <div class="app">
+  <div class="app" :class="{ 'eink-mode': isCalendarRoute }">
     <main class="app-main">
       <router-view />
     </main>
