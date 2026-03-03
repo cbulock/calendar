@@ -6,6 +6,21 @@
  */
 
 /**
+ * Compute a simple deterministic hash string from the given input string.
+ * Uses a djb2-style algorithm and returns a hex string.
+ * @param {string} str
+ * @returns {string}
+ */
+function hashString(str) {
+  let h = 5381
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h) ^ str.charCodeAt(i)
+    h = h >>> 0 // keep as unsigned 32-bit
+  }
+  return h.toString(16)
+}
+
+/**
  * Parse an ICS date string into a JavaScript Date.
  * Handles DATE-only (YYYYMMDD) and DATETIME (YYYYMMDDTHHmmssZ) formats.
  * @param {string} value - Raw ICS date value
@@ -67,7 +82,11 @@ export function parseICSData(icsText, sourceId) {
         // For all-day events with no DTEND, set end = start
         if (!end) end = start
         events.push({
-          id: current.uid || `${sourceId}-${Math.random().toString(36).slice(2)}`,
+          id:
+            current.uid ||
+            `${sourceId}-${hashString(
+              [sourceId, current.dtstart, current.dtend, current.summary, current.location].join('|'),
+            )}`,
           title: current.summary || '(No title)',
           start,
           end,
