@@ -63,16 +63,23 @@ const grid = computed(() => {
     })
   }
 
-  // Assign events to their day cells
+  // Assign events to all day cells they span ([start, end) range overlap)
   for (const cell of cells) {
     if (!cell.date) continue
+    const cellStart = new Date(
+      cell.date.getFullYear(),
+      cell.date.getMonth(),
+      cell.date.getDate(),
+    )
+    const cellEnd = new Date(
+      cell.date.getFullYear(),
+      cell.date.getMonth(),
+      cell.date.getDate() + 1,
+    )
     cell.events = props.events.filter((e) => {
       const evtStart = new Date(e.start)
-      return (
-        evtStart.getFullYear() === cell.date.getFullYear() &&
-        evtStart.getMonth() === cell.date.getMonth() &&
-        evtStart.getDate() === cell.date.getDate()
-      )
+      const evtEnd = e.end ? new Date(e.end) : evtStart
+      return evtStart < cellEnd && evtEnd > cellStart
     })
   }
 
