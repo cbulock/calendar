@@ -9,26 +9,32 @@ const { sources, addSource, removeSource, toggleSource } = useCalendar()
 
 <template>
   <div class="config-view">
-    <h1 class="config-view__title">Configuration</h1>
+    <header class="config-header">
+      <h1 class="config-title">⚙️ Configuration</h1>
+      <p class="config-subtitle">Manage your calendar sources and connections.</p>
+    </header>
 
-    <section class="config-section">
-      <h2 class="config-section__title">Add Calendar Source</h2>
-      <p class="config-section__desc">
+    <section class="config-card">
+      <h2 class="section-title">Add Calendar Source</h2>
+      <p class="section-desc">
         Select a calendar provider and enter its connection details to add it to your merged calendar.
       </p>
 
-      <PluginCard
-        v-for="plugin in plugins"
-        :key="plugin.id"
-        :plugin="plugin"
-        @add="addSource"
-      />
+      <div class="plugin-list">
+        <PluginCard
+          v-for="plugin in plugins"
+          :key="plugin.id"
+          :plugin="plugin"
+          @add="addSource"
+        />
+      </div>
     </section>
 
-    <section class="config-section">
-      <h2 class="config-section__title">Configured Calendars</h2>
+    <section class="config-card">
+      <h2 class="section-title">Configured Calendars</h2>
 
-      <p v-if="sources.length === 0" class="config-empty">
+      <p v-if="sources.length === 0" class="empty-state">
+        <span class="empty-icon">📅</span>
         No calendars added yet. Add one above.
       </p>
 
@@ -45,8 +51,8 @@ const { sources, addSource, removeSource, toggleSource } = useCalendar()
           </div>
           <div class="source-item__actions">
             <button
-              class="btn"
-              :class="source.enabled ? 'btn--active' : 'btn--inactive'"
+              class="toggle-btn"
+              :class="source.enabled ? 'toggle-btn--on' : 'toggle-btn--off'"
               @click="toggleSource(source.id)"
               :aria-label="source.enabled ? 'Disable ' + source.label : 'Enable ' + source.label"
               :aria-pressed="source.enabled"
@@ -54,7 +60,7 @@ const { sources, addSource, removeSource, toggleSource } = useCalendar()
               {{ source.enabled ? 'Enabled' : 'Disabled' }}
             </button>
             <button
-              class="btn btn--danger"
+              class="danger-btn"
               @click="removeSource(source.id)"
               :aria-label="'Remove ' + source.label"
             >
@@ -71,40 +77,72 @@ const { sources, addSource, removeSource, toggleSource } = useCalendar()
 .config-view {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.5rem;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem 0;
 }
 
-.config-view__title {
-  font-size: 1.3rem;
-  font-weight: bold;
-  margin: 0;
+.config-header {
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #000;
 }
 
-.config-section {
+.config-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.config-subtitle {
+  color: #64748b;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.config-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.section-desc {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.plugin-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.config-section__title {
-  font-size: 1rem;
-  font-weight: bold;
-  margin: 0;
-  padding-bottom: 0.25rem;
-  border-bottom: 1px solid #000;
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  padding: 1.5rem 0;
+  justify-content: center;
 }
 
-.config-section__desc {
-  font-size: 0.8rem;
-  color: #444;
-  margin: 0;
-}
-
-.config-empty {
-  font-size: 0.85rem;
-  color: #555;
+.empty-icon {
+  font-size: 1.25rem;
 }
 
 .source-list {
@@ -113,78 +151,104 @@ const { sources, addSource, removeSource, toggleSource } = useCalendar()
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .source-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #000;
-  background: #fff;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition: border-color 0.15s ease;
+}
+
+.source-item:hover {
+  border-color: #cbd5e1;
 }
 
 .source-item--disabled {
-  background: #f0f0f0;
-  color: #888;
+  background: #f8fafc;
+  opacity: 0.6;
 }
 
 .source-item__info {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.2rem;
   min-width: 0;
 }
 
 .source-item__label {
-  font-weight: bold;
-  font-size: 0.9rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #1e293b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .source-item__plugin {
-  font-size: 0.7rem;
-  color: #666;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .source-item__actions {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;
   flex-shrink: 0;
 }
 
-.btn {
-  padding: 0.25rem 0.6rem;
-  border: 1px solid #000;
-  background: #fff;
-  color: #000;
+.toggle-btn {
+  padding: 0.375rem 0.875rem;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 0.78rem;
-  font-family: inherit;
-  font-weight: bold;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.btn--active {
-  background: #000;
-  color: #fff;
+.toggle-btn--on {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
 }
 
-.btn--inactive {
-  background: #fff;
-  color: #000;
-  border-style: dashed;
+.toggle-btn--on:hover {
+  background: #bbf7d0;
 }
 
-.btn--danger {
-  border-color: #000;
+.toggle-btn--off {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
 }
 
-.btn--danger:hover {
-  background: #000;
-  color: #fff;
+.toggle-btn--off:hover {
+  background: #e2e8f0;
+}
+
+.danger-btn {
+  padding: 0.375rem 0.875rem;
+  border-radius: 6px;
+  border: 1.5px solid #fecaca;
+  background: #fff1f2;
+  color: #dc2626;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.danger-btn:hover {
+  background: #fecaca;
+  border-color: #fca5a5;
 }
 </style>
+

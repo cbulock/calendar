@@ -21,7 +21,7 @@ onMounted(loadEvents)
 </script>
 
 <template>
-  <div class="calendar-view">
+  <div class="calendar-view eink-mode">
     <div v-if="loading" class="status-bar" role="status">Loading events…</div>
     <div v-if="error" class="status-bar status-bar--error" role="alert">
       <strong>Some calendars failed to load:</strong>
