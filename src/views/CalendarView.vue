@@ -50,8 +50,9 @@ function nextMonth() {
 }
 
 function goToToday() {
-  currentYear.value = today.getFullYear()
-  currentMonth.value = today.getMonth()
+  const now = new Date()
+  currentYear.value = now.getFullYear()
+  currentMonth.value = now.getMonth()
 }
 
 function handleDaySelect(date) {
