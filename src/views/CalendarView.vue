@@ -21,13 +21,14 @@ const monthEnd = computed(() => new Date(currentYear.value, currentMonth.value +
 const selectedDayEvents = computed(() => {
   if (!selectedDate.value) return []
   const d = selectedDate.value
+  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+
   return events.value.filter((e) => {
     const evtStart = new Date(e.start)
-    return (
-      evtStart.getFullYear() === d.getFullYear() &&
-      evtStart.getMonth() === d.getMonth() &&
-      evtStart.getDate() === d.getDate()
-    )
+    const evtEnd = e.end ? new Date(e.end) : evtStart
+    // Include events whose [start, end) range overlaps the selected day
+    return evtStart < dayEnd && evtEnd > dayStart
   })
 })
 
