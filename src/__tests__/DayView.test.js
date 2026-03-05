@@ -12,6 +12,7 @@ const mockLoading = ref(false)
 const mockError = ref(null)
 const mockEnabledSources = ref([])
 const mockFetchEvents = vi.fn()
+const mockLoadSources = vi.fn()
 
 vi.mock('../composables/useCalendar.js', () => ({
   useCalendar: () => ({
@@ -20,6 +21,7 @@ vi.mock('../composables/useCalendar.js', () => ({
     error: mockError,
     enabledSources: mockEnabledSources,
     fetchEvents: mockFetchEvents,
+    loadSources: mockLoadSources,
   }),
 }))
 
@@ -70,6 +72,7 @@ describe('DayView', () => {
     mockError.value = null
     mockEnabledSources.value = [{ id: 'src1', label: 'Cal', enabled: true }]
     mockFetchEvents.mockReset()
+    mockLoadSources.mockReset()
   })
 
   it('renders today and tomorrow sections', () => {

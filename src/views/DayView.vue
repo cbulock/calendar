@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EventItem from '../components/EventItem.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 
-const { events, loading, error, fetchEvents, enabledSources } = useCalendar()
+const { events, loading, error, fetchEvents, loadSources, enabledSources } = useCalendar()
 
 const now = ref(new Date())
 
@@ -54,7 +54,10 @@ async function loadEvents() {
   await fetchEvents(todayStart.value, tomorrowEnd.value)
 }
 
-onMounted(loadEvents)
+onMounted(() => {
+  loadSources()
+  loadEvents()
+})
 </script>
 
 <template>

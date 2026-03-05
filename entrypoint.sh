@@ -13,7 +13,7 @@ set -e
 
 if [ -n "$AUTH_USER" ] && [ -n "$AUTH_PASSWORD" ]; then
   echo "Enabling HTTP Basic Auth for user: $AUTH_USER"
-  printf '%s:%s\n' "$AUTH_USER" "$(openssl passwd -apr1 "$AUTH_PASSWORD")" > /etc/nginx/.htpasswd
+  printf '%s:%s\n' "$AUTH_USER" "$(openssl passwd -6 "$AUTH_PASSWORD")" > /etc/nginx/.htpasswd
   printf 'auth_basic "Calendar";\nauth_basic_user_file /etc/nginx/.htpasswd;\n' > /etc/nginx/auth.conf
 else
   # No credentials provided — create empty auth.conf so nginx includes work.
