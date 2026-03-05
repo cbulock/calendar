@@ -26,10 +26,10 @@ function makeFetchMock() {
       return { ok: true, status: 200, json: async () => [...serverSources] }
     }
 
-    // PATCH /api/sources/:id
-    const patchMatch = url.match(/\/api\/sources\/([^?]+)$/)
-    if (method === 'PATCH' && patchMatch) {
-      const id = patchMatch[1]
+    // PATCH /api/sources/:id  or  DELETE /api/sources/:id
+    const sourceIdMatch = url.match(/\/api\/sources\/([^?]+)$/)
+    if (method === 'PATCH' && sourceIdMatch) {
+      const id = sourceIdMatch[1]
       const idx = serverSources.findIndex((s) => s.id === id)
       if (idx === -1) return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) }
       const updates = JSON.parse(options.body)
@@ -38,9 +38,8 @@ function makeFetchMock() {
     }
 
     // DELETE /api/sources/:id
-    const deleteMatch = url.match(/\/api\/sources\/([^?]+)$/)
-    if (method === 'DELETE' && deleteMatch) {
-      const id = deleteMatch[1]
+    if (method === 'DELETE' && sourceIdMatch) {
+      const id = sourceIdMatch[1]
       serverSources = serverSources.filter((s) => s.id !== id)
       return { ok: true, status: 204, json: async () => ({}) }
     }

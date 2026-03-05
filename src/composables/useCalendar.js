@@ -77,13 +77,18 @@ async function toggleSource(sourceId) {
   const source = sources.value.find((s) => s.id === sourceId)
   if (!source) return
   const enabled = !source.enabled
-  const res = await fetch(`${API_BASE}/sources/${sourceId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled }),
-  })
-  if (!res.ok) throw new Error(`Server error: ${res.status}`)
-  source.enabled = enabled
+  error.value = null
+  try {
+    const res = await fetch(`${API_BASE}/sources/${sourceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+    if (!res.ok) throw new Error(`Server error: ${res.status}`)
+    source.enabled = enabled
+  } catch (err) {
+    error.value = `Failed to toggle source: ${err.message}`
+  }
 }
 
 /**

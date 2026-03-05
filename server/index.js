@@ -56,7 +56,17 @@ app.patch('/api/sources/:id', (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ error: 'Source not found.' })
   }
-  sources[idx] = { ...sources[idx], ...req.body }
+  const updatedSource = { ...sources[idx] }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'config')) {
+    updatedSource.config = req.body.config
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'label')) {
+    updatedSource.label = req.body.label
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'enabled')) {
+    updatedSource.enabled = req.body.enabled
+  }
+  sources[idx] = updatedSource
   saveSources(sources)
   res.json(sources[idx])
 })
