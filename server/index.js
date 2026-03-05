@@ -2,21 +2,21 @@
  * Calendar API Server
  *
  * Provides REST endpoints for managing calendar sources and fetching events.
- * Sources are persisted to disk; event fetching is done server-side to
- * avoid CORS issues and keep configuration secrets off the client.
+ * Sources are persisted to disk; event data is fetched server-side and kept
+ * in an in-memory cache that is refreshed on a schedule (see scheduler.js).
  *
  * Endpoints:
  *   GET    /api/sources            List all sources
  *   POST   /api/sources            Add a new source
  *   PATCH  /api/sources/:id        Update a source (config, label, enabled)
  *   DELETE /api/sources/:id        Remove a source
- *   GET    /api/events             Fetch events from all enabled sources
+ *   GET    /api/events             Fetch events from the in-memory cache
  *                                  Query params: start (ISO), end (ISO)
  */
 
 import express from 'express'
 import { loadSources, saveSources } from './storage.js'
-import { getPlugin } from './plugins/index.js'
+import { startScheduler, getCachedEvents, refresh } from './scheduler.js'
 
 const app = express()
 app.use(express.json())
@@ -46,6 +46,11 @@ app.post('/api/sources', (req, res) => {
   }
   sources.push(newSource)
   saveSources(sources)
+  // Kick off a cache refresh asynchronously. The response is returned before
+  // the refresh completes; clients may see stale events for a brief period
+  // (eventual consistency). This avoids blocking the HTTP response on
+  // potentially slow network ICS fetches.
+  refresh().catch((err) => console.error('[scheduler] Post-add refresh failed:', err))
   res.status(201).json(newSource)
 })
 
@@ -68,6 +73,8 @@ app.patch('/api/sources/:id', (req, res) => {
   }
   sources[idx] = updatedSource
   saveSources(sources)
+  // Kick off a cache refresh asynchronously (eventual consistency — see POST handler).
+  refresh().catch((err) => console.error('[scheduler] Post-patch refresh failed:', err))
   res.json(sources[idx])
 })
 
@@ -79,6 +86,8 @@ app.delete('/api/sources/:id', (req, res) => {
     return res.status(404).json({ error: 'Source not found.' })
   }
   saveSources(filtered)
+  // Kick off a cache refresh asynchronously (eventual consistency — see POST handler).
+  refresh().catch((err) => console.error('[scheduler] Post-delete refresh failed:', err))
   res.status(204).end()
 })
 
@@ -87,7 +96,7 @@ app.delete('/api/sources/:id', (req, res) => {
 /* ------------------------------------------------------------------ */
 
 /** GET /api/events?start=ISO&end=ISO */
-app.get('/api/events', async (req, res) => {
+app.get('/api/events', (req, res) => {
   const { start, end } = req.query
   if (!start || !end) {
     return res.status(400).json({ error: 'start and end query parameters are required.' })
@@ -99,30 +108,8 @@ app.get('/api/events', async (req, res) => {
     return res.status(400).json({ error: 'start and end must be valid ISO date strings.' })
   }
 
-  const sources = loadSources().filter((s) => s.enabled !== false)
-  const dateRange = { start: startDate, end: endDate }
-  const events = []
-  const errors = []
-
-  await Promise.allSettled(
-    sources.map(async (source) => {
-      const plugin = getPlugin(source.pluginId)
-      if (!plugin) {
-        errors.push(`${source.label}: Unknown plugin "${source.pluginId}"`)
-        return
-      }
-      try {
-        const evts = await plugin.fetchEvents(source.config, dateRange, source.id)
-        events.push(...evts)
-      } catch (err) {
-        errors.push(`${source.label}: ${err.message}`)
-      }
-    }),
-  )
-
-  events.sort((a, b) => new Date(a.start) - new Date(b.start))
-
-  res.json({ events, errors })
+  const { events, errors, lastRefreshed } = getCachedEvents(startDate, endDate)
+  res.json({ events, errors, lastRefreshed })
 })
 
 /* ------------------------------------------------------------------ */
@@ -132,4 +119,5 @@ app.get('/api/events', async (req, res) => {
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
   console.log(`Calendar API server listening on port ${PORT}`)
+  startScheduler()
 })
