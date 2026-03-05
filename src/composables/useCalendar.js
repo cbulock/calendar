@@ -2,30 +2,15 @@
  * useCalendar composable
  *
  * Manages the list of configured calendar sources and fetching/merging events
- * from all enabled plugins.
+ * from all enabled plugins via the server-side API.
  */
 
 import { ref, computed } from 'vue'
-import { getPlugin } from '../plugins/index.js'
 
-// Persist configured sources in localStorage
-const STORAGE_KEY = 'calendar_sources'
-
-function loadSources() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-function saveSources(sources) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sources))
-}
+const API_BASE = '/api'
 
 /** @type {import('vue').Ref<Array>} */
-const sources = ref(loadSources())
+const sources = ref([])
 
 /** @type {import('vue').Ref<Array>} */
 const events = ref([])
@@ -42,40 +27,63 @@ const error = ref(null)
 const enabledSources = computed(() => sources.value.filter((s) => s.enabled !== false))
 
 /**
+ * Load all sources from the server.
+ */
+async function loadSources() {
+  try {
+    const res = await fetch(`${API_BASE}/sources`)
+    if (!res.ok) throw new Error(`Server error: ${res.status}`)
+    sources.value = await res.json()
+  } catch (err) {
+    error.value = `Failed to load sources: ${err.message}`
+  }
+}
+
+/**
  * Add a new calendar source.
  * @param {{ pluginId: string, config: object, label?: string }} source
  */
-function addSource(source) {
-  const newSource = {
-    id: `${source.pluginId}-${Date.now()}`,
-    pluginId: source.pluginId,
-    label: source.label || source.config.calendarName || source.pluginId,
-    config: source.config,
-    enabled: true,
+async function addSource(source) {
+  const res = await fetch(`${API_BASE}/sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(source),
+  })
+  if (!res.ok) {
+    const { error: msg } = await res.json().catch(() => ({}))
+    throw new Error(msg || `Server error: ${res.status}`)
   }
+  const newSource = await res.json()
   sources.value.push(newSource)
-  saveSources(sources.value)
 }
 
 /**
  * Remove a calendar source by its id.
  * @param {string} sourceId
  */
-function removeSource(sourceId) {
+async function removeSource(sourceId) {
+  const res = await fetch(`${API_BASE}/sources/${sourceId}`, { method: 'DELETE' })
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Server error: ${res.status}`)
+  }
   sources.value = sources.value.filter((s) => s.id !== sourceId)
-  saveSources(sources.value)
 }
 
 /**
  * Toggle a source's enabled state.
  * @param {string} sourceId
  */
-function toggleSource(sourceId) {
+async function toggleSource(sourceId) {
   const source = sources.value.find((s) => s.id === sourceId)
-  if (source) {
-    source.enabled = !source.enabled
-    saveSources(sources.value)
-  }
+  if (!source) return
+  const enabled = !source.enabled
+  const res = await fetch(`${API_BASE}/sources/${sourceId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) throw new Error(`Server error: ${res.status}`)
+  source.enabled = enabled
 }
 
 /**
@@ -83,12 +91,16 @@ function toggleSource(sourceId) {
  * @param {string} sourceId
  * @param {object} updates - Partial updates to apply (config, label, etc.)
  */
-function updateSource(sourceId, updates) {
+async function updateSource(sourceId, updates) {
+  const res = await fetch(`${API_BASE}/sources/${sourceId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(`Server error: ${res.status}`)
+  const updated = await res.json()
   const idx = sources.value.findIndex((s) => s.id === sourceId)
-  if (idx !== -1) {
-    sources.value[idx] = { ...sources.value[idx], ...updates }
-    saveSources(sources.value)
-  }
+  if (idx !== -1) sources.value[idx] = updated
 }
 
 /**
@@ -99,30 +111,22 @@ function updateSource(sourceId, updates) {
 async function fetchEvents(start, end) {
   loading.value = true
   error.value = null
-  const dateRange = { start, end }
-  const results = []
-  const errors = []
-
-  await Promise.allSettled(
-    enabledSources.value.map(async (source) => {
-      const plugin = getPlugin(source.pluginId)
-      if (!plugin) {
-        errors.push(`${source.label}: Unknown plugin "${source.pluginId}"`)
-        return
-      }
-      try {
-        const evts = await plugin.fetchEvents(source.config, dateRange)
-        results.push(...evts)
-      } catch (err) {
-        errors.push(`${source.label}: ${err.message}`)
-      }
-    }),
-  )
-
-  events.value = results.sort((a, b) => a.start - b.start)
-  loading.value = false
-  if (errors.length > 0) {
-    error.value = errors.join('\n')
+  try {
+    const params = new URLSearchParams({
+      start: start.toISOString(),
+      end: end.toISOString(),
+    })
+    const res = await fetch(`${API_BASE}/events?${params}`)
+    if (!res.ok) throw new Error(`Server error: ${res.status}`)
+    const { events: evts, errors } = await res.json()
+    events.value = evts.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end) }))
+    if (errors && errors.length > 0) {
+      error.value = errors.join('\n')
+    }
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
   }
 }
 
@@ -133,6 +137,7 @@ export function useCalendar() {
     loading,
     error,
     enabledSources,
+    loadSources,
     addSource,
     removeSource,
     toggleSource,
@@ -140,3 +145,4 @@ export function useCalendar() {
     fetchEvents,
   }
 }
+

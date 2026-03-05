@@ -9,14 +9,25 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve with nginx
-FROM nginx:stable-alpine
+# Stage 2: Final image — nginx (static files) + Node.js (API server)
+FROM node:lts-alpine
 
+# Install nginx and supervisord to manage both processes
+RUN apk add --no-cache nginx supervisor
+
+# --- Frontend ---
 COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/http.d/default.conf
 
-# Support Vue Router history mode (if needed) and single-page app fallback
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# --- API Server ---
+WORKDIR /app/server
+COPY package*.json /app/
+RUN cd /app && npm ci --omit=dev
+COPY server/ .
+
+# supervisord config to run nginx + node together
+COPY supervisord.conf /etc/supervisord.conf
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
