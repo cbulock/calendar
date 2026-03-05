@@ -28,6 +28,9 @@ COPY server/ .
 # supervisord config to run nginx + node together
 COPY supervisord.conf /etc/supervisord.conf
 
+# Declare /data as a persistent volume for application data
+RUN mkdir -p /data
+VOLUME ["/data"]
 EXPOSE 80
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
