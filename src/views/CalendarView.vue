@@ -3,7 +3,7 @@ import { computed, onMounted } from 'vue'
 import CalendarGrid from '../components/CalendarGrid.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 
-const { events, loading, error, fetchEvents, enabledSources } = useCalendar()
+const { events, loading, error, fetchEvents, loadSources, enabledSources } = useCalendar()
 
 // Always display the current month
 const today = new Date()
@@ -17,7 +17,10 @@ async function loadEvents() {
   await fetchEvents(monthStart.value, monthEnd.value)
 }
 
-onMounted(loadEvents)
+onMounted(() => {
+  loadSources()
+  loadEvents()
+})
 </script>
 
 <template>

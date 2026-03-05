@@ -9,14 +9,36 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve with nginx
-FROM nginx:stable-alpine
+# Stage 2: Final image — nginx (static files) + Node.js (API server)
+FROM node:lts-alpine
 
+# Install nginx, supervisord, and openssl (used by entrypoint for htpasswd generation)
+RUN apk add --no-cache nginx supervisor openssl
+
+# --- Frontend ---
 COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/http.d/default.conf
+# Placeholder auth config included by nginx.conf — replaced at runtime by entrypoint.sh
+RUN touch /etc/nginx/auth.conf
 
-# Support Vue Router history mode (if needed) and single-page app fallback
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# --- API Server ---
+WORKDIR /app/server
+COPY package*.json /app/
+RUN cd /app && npm ci --omit=dev
+COPY server/ .
+# Copy src so the server can import shared modules (e.g. src/plugins/utils/icsParser.js)
+COPY src/ /app/src/
 
+# supervisord config to run nginx + node together
+COPY supervisord.conf /etc/supervisord.conf
+
+# Entrypoint — sets up optional HTTP Basic Auth then starts supervisord
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Declare /data as a persistent volume for application data
+RUN mkdir -p /data
+VOLUME ["/data"]
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,10 +1,13 @@
 <script setup>
+import { onMounted } from 'vue'
 import { getAllPlugins } from '../plugins/index.js'
 import PluginCard from '../components/PluginCard.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 
 const plugins = getAllPlugins()
-const { sources, addSource, removeSource, toggleSource } = useCalendar()
+const { sources, addSource, removeSource, toggleSource, loadSources } = useCalendar()
+
+onMounted(loadSources)
 </script>
 
 <template>
