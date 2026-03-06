@@ -15,8 +15,8 @@ function formatTime(date) {
 function formatDuration(start, end) {
   if (!start || !end) return ''
   const ms = new Date(end) - new Date(start)
-  if (ms <= 0) return ''
-  const totalMinutes = Math.round(ms / 60_000)
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  const totalMinutes = Math.max(1, Math.floor(ms / 60_000))
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
   if (hours === 0) return `${minutes} min`

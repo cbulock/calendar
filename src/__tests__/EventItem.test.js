@@ -55,6 +55,30 @@ describe('EventItem', () => {
     expect(wrapper.find('.event-item__duration').exists()).toBe(false)
   })
 
+  it('hides duration when end equals start', () => {
+    const event = makeEvent({ end: '2024-06-15T10:00:00' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item__duration').exists()).toBe(false)
+  })
+
+  it('hides duration when end is invalid', () => {
+    const event = makeEvent({ end: 'not-a-date' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item__duration').exists()).toBe(false)
+  })
+
+  it('shows "1 min" for very short events (less than 60s)', () => {
+    const event = makeEvent({ end: '2024-06-15T10:00:29' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item__duration').text()).toBe('1 min')
+  })
+
+  it('floors partial minutes rather than rounding (59m59s → 59 min, not 1 hr)', () => {
+    const event = makeEvent({ end: '2024-06-15T10:59:59' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item__duration').text()).toBe('59 min')
+  })
+
   it('does not show location', () => {
     const event = makeEvent({ location: 'Conference Room A' })
     const wrapper = mount(EventItem, { props: { event } })
