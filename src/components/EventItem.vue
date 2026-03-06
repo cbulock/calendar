@@ -32,7 +32,7 @@ function formatDuration(start, end) {
     </div>
     <div class="event-item__time event-item__time--allday" v-else>All day</div>
     <div class="event-item__title">{{ event.title }}</div>
-    <div class="event-item__duration" v-if="!event.allDay && event.end">
+    <div class="event-item__duration" v-if="!event.allDay && !!formatDuration(event.start, event.end)">
       {{ formatDuration(event.start, event.end) }}
     </div>
   </div>
