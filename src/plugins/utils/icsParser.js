@@ -75,7 +75,7 @@ export function parseICSData(icsText, sourceId) {
       continue
     }
     if (line === 'END:VEVENT') {
-      if (current) {
+      if (current && current.status !== 'cancelled') {
         const allDay = current.dtstart && current.dtstart.length === 8
         const start = parseICSDate(current.dtstart)
         let end = parseICSDate(current.dtend)
@@ -128,6 +128,9 @@ export function parseICSData(icsText, sourceId) {
           break
         case 'location':
           current.location = value
+          break
+        case 'status':
+          current.status = value.toLowerCase()
           break
       }
     }
