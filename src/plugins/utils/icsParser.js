@@ -62,7 +62,7 @@ function unfoldLines(text) {
  * Parse ICS text into an array of calendar event objects.
  * @param {string} icsText - Raw ICS/iCalendar text
  * @param {string} sourceId - Plugin ID to tag each event with
- * @returns {Array<{id, title, start, end, allDay, description, location, source}>}
+ * @returns {Array<{id, title, start, end, allDay, description, location, status, source}>}
  */
 export function parseICSData(icsText, sourceId) {
   const lines = unfoldLines(icsText)
@@ -78,7 +78,7 @@ export function parseICSData(icsText, sourceId) {
       // RFC 5545 defines three VEVENT statuses: TENTATIVE, CONFIRMED, CANCELLED.
       // TENTATIVE and CONFIRMED events represent real calendar time and should be
       // displayed. Only CANCELLED events are hidden.
-      if (current && current.status !== 'cancelled') {
+      if (current && current.status !== 'CANCELLED') {
         const allDay = current.dtstart && current.dtstart.length === 8
         const start = parseICSDate(current.dtstart)
         let end = parseICSDate(current.dtend)
@@ -96,6 +96,7 @@ export function parseICSData(icsText, sourceId) {
           allDay: Boolean(allDay),
           description: current.description || '',
           location: current.location || '',
+          status: current.status || '',
           source: sourceId,
         })
       }
@@ -133,7 +134,7 @@ export function parseICSData(icsText, sourceId) {
           current.location = value
           break
         case 'status':
-          current.status = value.toLowerCase()
+          current.status = value.toUpperCase()
           break
       }
     }
