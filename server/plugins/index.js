@@ -6,7 +6,8 @@
  */
 
 import { lookup } from 'node:dns/promises'
-import { parseICSData, expandEvents } from '../icsParser.js'
+import { parseICSData } from '../icsParser.js'
+import { expandEvents } from '../../src/plugins/utils/icsParser.js'
 
 /**
  * Checks whether an IP address belongs to a private, loopback, link-local, or
