@@ -47,6 +47,24 @@ function extractTZID(rawParamSegment) {
 }
 
 /**
+ * Returns true if the given IANA timezone identifier is recognised by day.js
+ * (i.e., would NOT fall through to floating-time treatment in parseICSDate).
+ * @param {string} tzid
+ * @returns {boolean}
+ */
+function isSupportedTZID(tzid) {
+  if (!tzid) return false
+  try {
+    // dayjs.tz() throws if the timezone is unknown; use a fixed reference
+    // datetime that won't hit DST edge cases.
+    dayjs.tz('20000101T000000', 'YYYYMMDDTHHmmss', tzid)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Parse an ICS date string into a JavaScript Date.
  * Handles DATE-only (YYYYMMDD) and DATETIME (YYYYMMDDTHHmmssZ) formats.
  * When a TZID is provided, the local datetime is properly converted to UTC
@@ -76,8 +94,12 @@ function parseICSDate(value, tzid) {
       // Unknown/unsupported TZID — fall through to floating-time treatment
     }
   }
-  // Floating time (no timezone specified) — treat as local/server time
-  return dayjs(clean, 'YYYYMMDDTHHmmss').toDate()
+  // Floating time (no timezone specified) — preserve the wall-clock time by
+  // storing it as a UTC instant with identical hour/minute values.  Using
+  // dayjs.utc() here (rather than the bare dayjs() constructor) avoids any
+  // influence from the server's local timezone so the result is the same
+  // regardless of where the server process is running.
+  return dayjs.utc(clean, 'YYYYMMDDTHHmmss').toDate()
 }
 
 /**
@@ -292,6 +314,16 @@ export function parseICSData(icsText, sourceId) {
         let end = parseICSDate(current.dtend, current.dtend_tzid)
         // For all-day events with no DTEND, set end = start
         if (!end) end = start
+        // A floating time has no TZID parameter and no explicit UTC 'Z' suffix.
+        // It also includes events whose TZID is unsupported/unknown (those fall
+        // through to the same UTC wall-clock storage path in parseICSDate).
+        // All-day events (DATE-only) are excluded — they are inherently date-only
+        // and do not have a wall-clock time component.
+        const floating =
+          !allDay &&
+          Boolean(current.dtstart) &&
+          !current.dtstart.endsWith('Z') &&
+          !isSupportedTZID(current.dtstart_tzid)
         const event = {
           id:
             current.uid ||
@@ -307,6 +339,7 @@ export function parseICSData(icsText, sourceId) {
           status: current.status || '',
           source: sourceId,
         }
+        if (floating) event.floating = true
         if (current.dtstart_tzid) event.startTzid = current.dtstart_tzid
         if (current.rrule) event.rrule = current.rrule
         if (current.exdates && current.exdates.length > 0) event.exdates = current.exdates

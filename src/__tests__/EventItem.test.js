@@ -107,4 +107,18 @@ describe('EventItem', () => {
     const wrapper = mount(EventItem, { props: { event } })
     expect(wrapper.find('.event-item').classes()).not.toContain('event-item--tentative')
   })
+
+  it('shows the time element for floating events (not all-day)', () => {
+    // Floating events should still display a time (wall-clock), not "All day"
+    const event = makeEvent({ floating: true, allDay: false })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item__time').exists()).toBe(true)
+    expect(wrapper.find('.event-item__time--allday').exists()).toBe(false)
+  })
+
+  it('shows the duration for floating events', () => {
+    const event = makeEvent({ floating: true, end: '2024-06-15T11:30:00' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item__duration').text()).toBe('1 hr 30 min')
+  })
 })

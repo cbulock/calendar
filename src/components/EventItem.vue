@@ -15,10 +15,15 @@ const { timezone } = useTimezone()
 function formatTime(date) {
   if (!date) return ''
   const d = new Date(date)
+  // Floating-time events have no timezone attached — their stored UTC value IS
+  // the wall-clock time (e.g. "09:00 UTC" means "9 AM wherever you are").
+  // Display them using UTC so the hours/minutes are shown as-is, without any
+  // offset conversion.
+  const tz = props.event.floating ? 'UTC' : timezone.value
   return d.toLocaleTimeString('default', {
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: timezone.value,
+    timeZone: tz,
   })
 }
 

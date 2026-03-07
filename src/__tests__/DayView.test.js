@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, ref } from 'vue'
 
@@ -24,6 +24,17 @@ vi.mock('../composables/useCalendar.js', () => ({
     loadSources: mockLoadSources,
   }),
 }))
+
+// Mock useTimezone to always return UTC so day-boundary logic is deterministic
+// across any CI runner timezone.  midnightInTimezone / getTodayInTimezone keep
+// their real implementations; only the reactive timezone ref is pinned.
+vi.mock('../composables/useTimezone.js', async (importOriginal) => {
+  const real = await importOriginal()
+  return {
+    ...real,
+    useTimezone: () => ({ timezone: ref('UTC'), setTimezone: vi.fn() }),
+  }
+})
 
 // Stub EventItem so we don't need to render its internals
 const EventItemStub = defineComponent({
@@ -57,9 +68,12 @@ function makeEvent(id, title, startDate, endDate = null, allDay = false) {
   }
 }
 
-const today = new Date()
-const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+// With the UTC timezone mock, DayView derives "today" from UTC wall-clock time.
+// Use UTC date methods here so these module-level constants stay in sync with
+// what DayView will compute, regardless of the host machine's local timezone.
+const now = new Date()
+const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -75,11 +89,15 @@ describe('DayView', () => {
     mockLoadSources.mockReset()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('renders today and tomorrow sections', () => {
     const wrapper = mountDayView()
     const headings = wrapper.findAll('h2, h3')
     const headingTexts = headings.map((h) => h.text())
-    expect(headingTexts.some((t) => /today/i.test(t) || t.includes(todayMidnight.getDate()))).toBe(true)
+    expect(headingTexts.some((t) => /today/i.test(t) || t.includes(todayMidnight.getUTCDate()))).toBe(true)
     expect(headingTexts.some((t) => /tomorrow/i.test(t))).toBe(true)
   })
 
@@ -94,8 +112,7 @@ describe('DayView', () => {
   })
 
   it('renders today events in the today section', async () => {
-    const todayNoon = new Date(todayMidnight)
-    todayNoon.setHours(12)
+    const todayNoon = new Date(todayMidnight.getTime() + 12 * 3600_000)
     mockEvents.value = [makeEvent('e1', 'Morning standup', todayNoon)]
     const wrapper = mountDayView()
     const todaySection = wrapper.find('.day-section--today')
@@ -103,8 +120,7 @@ describe('DayView', () => {
   })
 
   it('renders tomorrow events in the tomorrow section', async () => {
-    const tomorrowNoon = new Date(tomorrow)
-    tomorrowNoon.setHours(10)
+    const tomorrowNoon = new Date(tomorrow.getTime() + 10 * 3600_000)
     mockEvents.value = [makeEvent('e2', 'Team lunch', tomorrowNoon)]
     const wrapper = mountDayView()
     const tomorrowSection = wrapper.find('.day-section--tomorrow')
@@ -112,8 +128,7 @@ describe('DayView', () => {
   })
 
   it('does not show today events in the tomorrow section', async () => {
-    const todayNoon = new Date(todayMidnight)
-    todayNoon.setHours(12)
+    const todayNoon = new Date(todayMidnight.getTime() + 12 * 3600_000)
     mockEvents.value = [makeEvent('e1', 'Today only event', todayNoon)]
     const wrapper = mountDayView()
     const tomorrowSection = wrapper.find('.day-section--tomorrow')
@@ -121,8 +136,7 @@ describe('DayView', () => {
   })
 
   it('does not show tomorrow events in the today section', async () => {
-    const tomorrowNoon = new Date(tomorrow)
-    tomorrowNoon.setHours(10)
+    const tomorrowNoon = new Date(tomorrow.getTime() + 10 * 3600_000)
     mockEvents.value = [makeEvent('e2', 'Future meeting', tomorrowNoon)]
     const wrapper = mountDayView()
     const todaySection = wrapper.find('.day-section--today')
@@ -152,10 +166,70 @@ describe('DayView', () => {
     mountDayView()
     expect(mockFetchEvents).toHaveBeenCalledOnce()
     const [start, end] = mockFetchEvents.mock.calls[0]
-    const dayAfterTomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2)
-    // start should be today's midnight
-    expect(start.getDate()).toBe(todayMidnight.getDate())
-    // end should be day-after-tomorrow's midnight (half-open interval covering all of tomorrow)
-    expect(end.getDate()).toBe(dayAfterTomorrow.getDate())
+    const dayAfterTomorrowMidnight = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 2),
+    )
+    // start must be on or before today's UTC midnight (fetchStart = min of TZ and UTC boundaries)
+    expect(start.getTime()).toBeLessThanOrEqual(todayMidnight.getTime())
+    // end must be on or after day-after-tomorrow's UTC midnight (covers all of tomorrow)
+    expect(end.getTime()).toBeGreaterThanOrEqual(dayAfterTomorrowMidnight.getTime())
+  })
+
+  describe('floating-time events', () => {
+    // Pin the system clock to noon UTC on a Wednesday so the UTC date is
+    // unambiguous regardless of the host timezone.
+    const FIXED_TIME = new Date('2025-06-18T12:00:00Z') // 2025-06-18 Wednesday
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(FIXED_TIME)
+    })
+
+    // afterEach is handled by the outer describe's afterEach (vi.useRealTimers())
+
+    it('renders floating-time events for today in the today section', () => {
+      // Floating event at 10:00 on the fixed UTC date — should appear in "today"
+      const floatingStart = new Date('2025-06-18T10:00:00Z')
+      const floatingEnd = new Date('2025-06-18T11:00:00Z')
+      mockEvents.value = [
+        { ...makeEvent('fe1', 'Floating Meeting', floatingStart, floatingEnd), floating: true },
+      ]
+      const wrapper = mountDayView()
+      const todaySection = wrapper.find('.day-section--today')
+      expect(todaySection.text()).toContain('Floating Meeting')
+    })
+
+    it('does not show floating events in tomorrow section when they fall on today (UTC)', () => {
+      const floatingStart = new Date('2025-06-18T10:00:00Z')
+      const floatingEnd = new Date('2025-06-18T11:00:00Z')
+      mockEvents.value = [
+        { ...makeEvent('fe2', 'Floating Today Only', floatingStart, floatingEnd), floating: true },
+      ]
+      const wrapper = mountDayView()
+      const tomorrowSection = wrapper.find('.day-section--tomorrow')
+      expect(tomorrowSection.text()).not.toContain('Floating Today Only')
+    })
+
+    it('renders floating events for tomorrow in the tomorrow section', () => {
+      const floatingStart = new Date('2025-06-19T09:00:00Z') // next day UTC
+      const floatingEnd = new Date('2025-06-19T10:00:00Z')
+      mockEvents.value = [
+        { ...makeEvent('fe3', 'Floating Tomorrow', floatingStart, floatingEnd), floating: true },
+      ]
+      const wrapper = mountDayView()
+      const tomorrowSection = wrapper.find('.day-section--tomorrow')
+      expect(tomorrowSection.text()).toContain('Floating Tomorrow')
+    })
+
+    it('does not show floating tomorrow events in the today section', () => {
+      const floatingStart = new Date('2025-06-19T09:00:00Z')
+      const floatingEnd = new Date('2025-06-19T10:00:00Z')
+      mockEvents.value = [
+        { ...makeEvent('fe4', 'Floating Tomorrow Only', floatingStart, floatingEnd), floating: true },
+      ]
+      const wrapper = mountDayView()
+      const todaySection = wrapper.find('.day-section--today')
+      expect(todaySection.text()).not.toContain('Floating Tomorrow Only')
+    })
   })
 })

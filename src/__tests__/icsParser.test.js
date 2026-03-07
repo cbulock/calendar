@@ -177,6 +177,19 @@ END:VCALENDAR`
     expect(events[0].end.toISOString()).toBe('2025-03-15T11:00:00.000Z')
   })
 
+  it('does not mark UTC (Z suffix) events as floating', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:utc-nofloat@test
+SUMMARY:UTC Event
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBeFalsy()
+  })
+
   it('converts a TZID-qualified datetime to UTC', () => {
     // America/New_York in January observes EST (UTC-5, no DST)
     const ics = `BEGIN:VCALENDAR
@@ -190,6 +203,79 @@ END:VCALENDAR`
     const events = parseICSData(ics, 'test-source')
     expect(events[0].start.toISOString()).toBe('2025-01-15T15:00:00.000Z')
     expect(events[0].end.toISOString()).toBe('2025-01-15T16:00:00.000Z')
+  })
+
+  it('does not mark TZID-qualified events as floating', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tzid-nofloat@test
+SUMMARY:NYC Event
+DTSTART;TZID=America/New_York:20250115T100000
+DTEND;TZID=America/New_York:20250115T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBeFalsy()
+  })
+
+  it('marks floating-time events (no TZID, no Z) with floating: true', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:floating@test
+SUMMARY:Floating Event
+DTSTART:20250315T100000
+DTEND:20250315T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBe(true)
+  })
+
+  it('marks events with an unknown/unsupported TZID as floating: true', () => {
+    // An unrecognised TZID falls through to UTC wall-clock storage in parseICSDate;
+    // the event must also be flagged as floating so the UI filters/renders it correctly.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:bad-tzid@test
+SUMMARY:Bad TZID Event
+DTSTART;TZID=Not/A_Real_Timezone:20250315T100000
+DTEND;TZID=Not/A_Real_Timezone:20250315T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBe(true)
+    // Times should be stored as wall-clock UTC, not shifted by an unknown offset
+    expect(events[0].start.toISOString()).toBe('2025-03-15T10:00:00.000Z')
+  })
+
+  it('stores floating-time wall-clock hours/minutes in UTC', () => {
+    // A floating "10:00" event must be stored with T10:00:00Z so that the client
+    // can display it at "10:00" regardless of the user's UTC offset.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:floating-utc@test
+SUMMARY:Floating Event
+DTSTART:20250315T100000
+DTEND:20250315T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].start.toISOString()).toBe('2025-03-15T10:00:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2025-03-15T11:00:00.000Z')
+  })
+
+  it('does not mark all-day events as floating', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:allday-nofloat@test
+SUMMARY:All Day Event
+DTSTART:20250320
+DTEND:20250321
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBeFalsy()
+    expect(events[0].allDay).toBe(true)
   })
 
   it('stores rrule on recurring events', () => {
@@ -251,6 +337,41 @@ describe('expandEvents', () => {
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('one-off')
     expect(result[0].title).toBe('One Off')
+  })
+
+  it('preserves the floating flag on non-recurring events', () => {
+    const events = [
+      {
+        id: 'floating-one-off',
+        title: 'Floating One Off',
+        start: new Date('2025-02-01T10:00:00Z'),
+        end: new Date('2025-02-01T11:00:00Z'),
+        allDay: false,
+        floating: true,
+        source: 'test',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(1)
+    expect(result[0].floating).toBe(true)
+  })
+
+  it('preserves the floating flag on expanded recurring events', () => {
+    const events = [
+      {
+        id: 'floating-daily',
+        title: 'Floating Daily',
+        start: new Date('2025-01-01T09:00:00Z'),
+        end: new Date('2025-01-01T09:30:00Z'),
+        allDay: false,
+        floating: true,
+        source: 'test',
+        rrule: 'FREQ=DAILY;COUNT=3',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(3)
+    result.forEach((e) => expect(e.floating).toBe(true))
   })
 
   it('expands a daily recurring event', () => {
