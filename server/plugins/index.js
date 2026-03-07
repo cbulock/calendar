@@ -7,6 +7,7 @@
 
 import { lookup } from 'node:dns/promises'
 import { parseICSData } from '../icsParser.js'
+import { expandEvents } from '../../src/plugins/utils/icsParser.js'
 
 /**
  * Checks whether an IP address belongs to a private, loopback, link-local, or
@@ -102,7 +103,8 @@ async function fetchICSEvents(config, dateRange, sourceId) {
     throw new Error(`Failed to fetch calendar (HTTP ${response.status})`)
   }
   const icsText = await response.text()
-  const events = parseICSData(icsText, sourceId)
+  const rawEvents = parseICSData(icsText, sourceId)
+  const events = expandEvents(rawEvents, start, end)
   return events.filter((e) => e.end >= start && e.start <= end)
 }
 
