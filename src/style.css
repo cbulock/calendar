@@ -67,7 +67,36 @@ input:focus-visible {
 }
 
 /*
- * E-ink mode: greyscale, no animations, serif font.
+ * Dark mode: dark background, light text.
+ * Applied to the root element when the user toggles dark mode.
+ */
+.dark-mode {
+  color-scheme: dark;
+  color: #e2e8f0;
+  background-color: #0f172a;
+}
+
+.dark-mode body {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.dark-mode a {
+  color: #818cf8;
+}
+
+.dark-mode a:hover,
+.dark-mode a:focus {
+  color: #a5b4fc;
+}
+
+.dark-mode button:focus-visible {
+  outline-color: #818cf8;
+}
+
+.dark-mode input:focus-visible {
+  outline-color: #818cf8;
+}
  * Applied to the calendar view wrapper to preserve e-ink display compatibility.
  */
 .eink-mode {

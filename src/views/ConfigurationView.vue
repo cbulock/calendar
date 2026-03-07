@@ -11,6 +11,32 @@ const { timezone, setTimezone } = useTimezone()
 
 onMounted(loadSources)
 
+// Sync status
+const syncStatus = ref(null)
+
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status')
+    if (res.ok) syncStatus.value = await res.json()
+  } catch {
+    // non-critical, ignore
+  }
+}
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return null
+  const diff = Date.now() - new Date(isoString).getTime()
+  const minutes = Math.floor(diff / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes === 1) return '1 minute ago'
+  return `${minutes} minutes ago`
+}
+
+onMounted(() => {
+  loadSources()
+  loadStatus()
+})
+
 // Build a list of available timezones, falling back to a set of common ones
 let availableTimezones
 try {
@@ -73,6 +99,26 @@ function applyTimezone() {
           @add="addSource"
         />
       </div>
+    </section>
+
+    <section class="config-card">
+      <h2 class="section-title">Sync Status</h2>
+      <div v-if="syncStatus" class="sync-status">
+        <p class="sync-row">
+          <span class="sync-label">Last synced:</span>
+          <span>{{ syncStatus.lastRefreshed ? formatRelativeTime(syncStatus.lastRefreshed) : 'Never' }}</span>
+        </p>
+        <p class="sync-row">
+          <span class="sync-label">Active sources:</span>
+          <span>{{ syncStatus.sourceCount }}</span>
+        </p>
+        <p class="sync-row" v-if="syncStatus.errorCount > 0">
+          <span class="sync-label">Errors:</span>
+          <span class="sync-errors">{{ syncStatus.errorCount }} source(s) failed last sync</span>
+        </p>
+      </div>
+      <p v-else class="section-desc">Unable to retrieve sync status.</p>
+      <button class="apply-btn" style="align-self: flex-start" @click="loadStatus">Refresh Status</button>
     </section>
 
     <section class="config-card">
@@ -369,6 +415,31 @@ function applyTimezone() {
   font-size: 0.8rem;
   color: #64748b;
   margin: 0;
+}
+
+.sync-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sync-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin: 0;
+  align-items: baseline;
+}
+
+.sync-label {
+  font-weight: 600;
+  color: #475569;
+  min-width: 9rem;
+}
+
+.sync-errors {
+  color: #dc2626;
+  font-weight: 600;
 }
 </style>
 

@@ -1,19 +1,30 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import CalendarGrid from '../components/CalendarGrid.vue'
+import EventModal from '../components/EventModal.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone, getTodayInTimezone, midnightInTimezone } from '../composables/useTimezone.js'
 
-const { events, loading, error, fetchEvents, loadSources, enabledSources } = useCalendar()
+const { events, loading, error, fetchEvents, loadSources, enabledSources, sources } = useCalendar()
 const { timezone } = useTimezone()
 
-// Always display the current month in the configured timezone
-const todayInTZ = computed(() => getTodayInTimezone(timezone.value))
-const currentYear = computed(() => todayInTZ.value.year)
-const currentMonth = computed(() => todayInTZ.value.month)
+// Month offset (0 = current month, -1 = previous, +1 = next, etc.)
+const monthOffset = ref(0)
 
-const monthStart = computed(() => midnightInTimezone(currentYear.value, currentMonth.value, 1, timezone.value))
-const monthEnd = computed(() => midnightInTimezone(currentYear.value, currentMonth.value + 1, 1, timezone.value))
+const todayInTZ = computed(() => getTodayInTimezone(timezone.value))
+
+// Derive display year/month from today + offset
+const displayYear = computed(() => {
+  const d = new Date(todayInTZ.value.year, todayInTZ.value.month + monthOffset.value, 1)
+  return d.getFullYear()
+})
+const displayMonth = computed(() => {
+  const d = new Date(todayInTZ.value.year, todayInTZ.value.month + monthOffset.value, 1)
+  return d.getMonth()
+})
+
+const monthStart = computed(() => midnightInTimezone(displayYear.value, displayMonth.value, 1, timezone.value))
+const monthEnd = computed(() => midnightInTimezone(displayYear.value, displayMonth.value + 1, 1, timezone.value))
 
 async function loadEvents() {
   await fetchEvents(monthStart.value, monthEnd.value)
@@ -23,6 +34,24 @@ onMounted(() => {
   loadSources()
   loadEvents()
 })
+
+watch([monthOffset, timezone], () => { loadEvents() })
+
+// Event details modal
+const selectedEvent = ref(null)
+
+function openEvent(event) {
+  selectedEvent.value = event
+}
+function closeEvent() {
+  selectedEvent.value = null
+}
+
+// Resolve source label by sourceId for the modal
+function sourceLabelFor(sourceId) {
+  const src = sources.value.find((s) => s.id === sourceId)
+  return src ? src.label : sourceId || ''
+}
 </script>
 
 <template>
@@ -37,10 +66,21 @@ onMounted(() => {
     </div>
 
     <CalendarGrid
-      :year="currentYear"
-      :month="currentMonth"
+      :year="displayYear"
+      :month="displayMonth"
       :events="events"
       :timezone="timezone"
+      @prev="monthOffset--"
+      @next="monthOffset++"
+      @event-click="openEvent"
+    />
+
+    <EventModal
+      v-if="selectedEvent"
+      :event="selectedEvent"
+      :source-label="sourceLabelFor(selectedEvent.sourceId)"
+      :timezone="timezone"
+      @close="closeEvent"
     />
   </div>
 </template>

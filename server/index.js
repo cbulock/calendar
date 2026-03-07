@@ -16,7 +16,7 @@
 
 import express from 'express'
 import { loadSources, saveSources } from './storage.js'
-import { startScheduler, getCachedEvents, refresh } from './scheduler.js'
+import { startScheduler, getCachedEvents, refresh, getStatus } from './scheduler.js'
 
 const app = express()
 app.use(express.json())
@@ -89,6 +89,15 @@ app.delete('/api/sources/:id', (req, res) => {
   // Kick off a cache refresh asynchronously (eventual consistency — see POST handler).
   refresh().catch((err) => console.error('[scheduler] Post-delete refresh failed:', err))
   res.status(204).end()
+})
+
+/* ------------------------------------------------------------------ */
+/* Status                                                               */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/status */
+app.get('/api/status', (_req, res) => {
+  res.json(getStatus())
 })
 
 /* ------------------------------------------------------------------ */

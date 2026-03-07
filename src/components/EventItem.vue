@@ -8,6 +8,8 @@ const props = defineProps({
   },
 })
 
+const emit = defineEmits(['select'])
+
 const { timezone } = useTimezone()
 
 function formatTime(date) {
@@ -34,7 +36,15 @@ function formatDuration(start, end) {
 </script>
 
 <template>
-  <div class="event-item" :class="{ 'event-item--tentative': event.status === 'TENTATIVE' }">
+  <div
+    class="event-item"
+    :class="{ 'event-item--tentative': event.status === 'TENTATIVE' }"
+    role="button"
+    tabindex="0"
+    @click="emit('select', event)"
+    @keydown.enter="emit('select', event)"
+    @keydown.space.prevent="emit('select', event)"
+  >
     <div class="event-item__time" v-if="!event.allDay">
       {{ formatTime(event.start) }}
     </div>
@@ -51,6 +61,11 @@ function formatDuration(start, end) {
   border: 1px solid #000;
   padding: 0.4rem 0.6rem;
   margin-bottom: 0.4rem;
+  cursor: pointer;
+}
+
+.event-item:hover {
+  background: #f5f5f5;
 }
 
 .event-item__time {

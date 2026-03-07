@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import EventItem from '../components/EventItem.vue'
+import EventModal from '../components/EventModal.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone, midnightInTimezone, getTodayInTimezone } from '../composables/useTimezone.js'
 
-const { events, loading, error, fetchEvents, loadSources, enabledSources } = useCalendar()
+const { events, loading, error, fetchEvents, loadSources, enabledSources, sources } = useCalendar()
 const { timezone } = useTimezone()
 
 const now = ref(new Date())
@@ -72,6 +73,21 @@ onMounted(() => {
 
 // Re-fetch when the configured timezone changes because the day boundaries shift
 watch(timezone, () => { loadEvents() })
+
+// Event details modal
+const selectedEvent = ref(null)
+
+function openEvent(event) {
+  selectedEvent.value = event
+}
+function closeEvent() {
+  selectedEvent.value = null
+}
+
+function sourceLabelFor(sourceId) {
+  const src = sources.value.find((s) => s.id === sourceId)
+  return src ? src.label : sourceId || ''
+}
 </script>
 
 <template>
@@ -90,7 +106,7 @@ watch(timezone, () => { loadEvents() })
       <p v-if="todayEvents.length === 0" class="day-section__empty">No events today.</p>
       <ul v-else class="day-section__list">
         <li v-for="event in todayEvents" :key="event.id">
-          <EventItem :event="event" />
+          <EventItem :event="event" @select="openEvent" />
         </li>
       </ul>
     </section>
@@ -100,10 +116,18 @@ watch(timezone, () => { loadEvents() })
       <p v-if="tomorrowEvents.length === 0" class="day-section__empty">No events tomorrow.</p>
       <ul v-else class="day-section__list">
         <li v-for="event in tomorrowEvents" :key="event.id">
-          <EventItem :event="event" />
+          <EventItem :event="event" @select="openEvent" />
         </li>
       </ul>
     </section>
+
+    <EventModal
+      v-if="selectedEvent"
+      :event="selectedEvent"
+      :source-label="sourceLabelFor(selectedEvent.sourceId)"
+      :timezone="timezone"
+      @close="closeEvent"
+    />
   </div>
 </template>
 

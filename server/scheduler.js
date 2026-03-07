@@ -94,6 +94,22 @@ export async function refresh() {
 }
 
 /**
+ * Return a status summary for the scheduler.
+ * @returns {{ lastRefreshed: string|null, nextRefreshAt: string|null, sourceCount: number, errorCount: number }}
+ */
+export function getStatus() {
+  const sources = loadSources()
+  return {
+    lastRefreshed: _cache.lastRefreshed ? _cache.lastRefreshed.toISOString() : null,
+    nextRefreshAt: _intervalHandle && _cache.lastRefreshed
+      ? new Date(_cache.lastRefreshed.getTime() + REFRESH_INTERVAL_MS).toISOString()
+      : null,
+    sourceCount: sources.filter((s) => s.enabled !== false).length,
+    errorCount: _cache.errors.length,
+  }
+}
+
+/**
  * Return cached events optionally filtered to a date window.
  * @param {Date} [start] - Inclusive lower bound (omit for all events)
  * @param {Date} [end]   - Inclusive upper bound (omit for all events)

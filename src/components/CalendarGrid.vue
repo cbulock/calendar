@@ -33,9 +33,11 @@ const props = defineProps({
   },
 })
 
+const emit = defineEmits(['prev', 'next', 'event-click'])
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const monthLabel = computed(() => {
+const monthLabel= computed(() => {
   return midnightInTimezone(props.year, props.month, 15, props.timezone).toLocaleString('default', {
     month: 'long',
     year: 'numeric',
@@ -126,7 +128,11 @@ function isToday(cellYear, cellMonth, cellDay) {
 
 <template>
   <div class="calendar-grid">
-    <div class="month-label">{{ monthLabel }}</div>
+    <div class="month-header">
+      <button class="nav-btn" @click="emit('prev')" aria-label="Previous month">&#8249;</button>
+      <div class="month-label">{{ monthLabel }}</div>
+      <button class="nav-btn" @click="emit('next')" aria-label="Next month">&#8250;</button>
+    </div>
     <div class="day-headers">
       <div v-for="day in DAYS" :key="day" class="day-header">{{ day }}</div>
     </div>
@@ -163,6 +169,11 @@ function isToday(cellYear, cellMonth, cellDay) {
               class="event-chip"
               :class="{ 'event-chip--tentative': event.status === 'TENTATIVE' }"
               :title="event.title"
+              role="button"
+              tabindex="0"
+              @click="emit('event-click', event)"
+              @keydown.enter="emit('event-click', event)"
+              @keydown.space.prevent="emit('event-click', event)"
             >
               {{ event.title }}
             </li>
@@ -182,14 +193,42 @@ function isToday(cellYear, cellMonth, cellDay) {
   border: 1px solid #000;
 }
 
+.month-header {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #000;
+  background: #000;
+  color: #fff;
+}
+
+.nav-btn {
+  background: transparent;
+  color: #fff;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 0.6rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.nav-btn:hover {
+  background: #333;
+}
+
+.nav-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
 .month-label {
+  flex: 1;
   text-align: center;
   font-size: 1.1rem;
   font-weight: bold;
   padding: 0.4rem 0;
-  border-bottom: 1px solid #000;
-  background: #000;
-  color: #fff;
   letter-spacing: 0.05em;
 }
 
@@ -277,6 +316,11 @@ function isToday(cellYear, cellMonth, cellDay) {
   padding: 0 3px;
   margin-bottom: 1px;
   display: block;
+  cursor: pointer;
+}
+
+.event-chip:hover {
+  background: #444;
 }
 
 .event-more {

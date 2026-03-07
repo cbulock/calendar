@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import CalendarView from '../views/CalendarView.vue'
 import ConfigurationView from '../views/ConfigurationView.vue'
 import DayView from '../views/DayView.vue'
+import WeekView from '../views/WeekView.vue'
 
 const routes = [
   {
@@ -12,6 +13,11 @@ const routes = [
     path: '/calendar',
     name: 'calendar',
     component: CalendarView,
+  },
+  {
+    path: '/week',
+    name: 'week',
+    component: WeekView,
   },
   {
     path: '/day',

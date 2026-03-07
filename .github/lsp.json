@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "vue": {
+      "command": "npx",
+      "args": ["-y", "@vue/language-server", "--stdio"],
+      "languages": ["vue"],
+      "fileExtensions": [".vue"]
+    }
+  }
+}

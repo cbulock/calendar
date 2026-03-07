@@ -1,17 +1,35 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const isCalendarRoute = computed(() => route.name === 'calendar')
+
+const darkMode = ref(false)
+
+onMounted(() => {
+  darkMode.value = localStorage.getItem('calendar_dark_mode') === 'true'
+})
+
+function toggleDarkMode() {
+  darkMode.value = !darkMode.value
+  localStorage.setItem('calendar_dark_mode', String(darkMode.value))
+}
 </script>
 
 <template>
-  <div class="app" :class="{ 'eink-mode': isCalendarRoute }">
+  <div class="app" :class="{ 'eink-mode': isCalendarRoute, 'dark-mode': darkMode }">
     <nav class="app-nav">
       <router-link class="nav-link" :to="{ name: 'calendar' }">Monthly</router-link>
+      <router-link class="nav-link" :to="{ name: 'week' }">Week</router-link>
       <router-link class="nav-link" :to="{ name: 'day' }">Day</router-link>
       <router-link class="nav-link nav-link--config" :to="{ name: 'config' }">⚙ Config</router-link>
+      <button
+        class="nav-link dark-toggle"
+        @click="toggleDarkMode"
+        :aria-label="darkMode ? 'Switch to light mode' : 'Switch to dark mode'"
+        :title="darkMode ? 'Light mode' : 'Dark mode'"
+      >{{ darkMode ? '☀' : '☾' }}</button>
     </nav>
     <main class="app-main">
       <router-view />
@@ -54,6 +72,14 @@ const isCalendarRoute = computed(() => route.name === 'calendar')
 
 .nav-link--config {
   margin-left: auto;
+}
+
+.dark-toggle {
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  padding: 0.45rem 0.75rem;
+  margin-left: 0;
 }
 
 .app-main {
