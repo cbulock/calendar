@@ -11,17 +11,30 @@ function formatTime(date) {
   const d = new Date(date)
   return d.toLocaleTimeString('default', { hour: '2-digit', minute: '2-digit' })
 }
+
+function formatDuration(start, end) {
+  if (!start || !end) return ''
+  const ms = new Date(end) - new Date(start)
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  const totalMinutes = Math.max(1, Math.floor(ms / 60_000))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours === 0) return `${minutes} min`
+  if (minutes === 0) return `${hours} hr`
+  return `${hours} hr ${minutes} min`
+}
 </script>
 
 <template>
   <div class="event-item">
     <div class="event-item__time" v-if="!event.allDay">
-      {{ formatTime(event.start) }}–{{ formatTime(event.end) }}
+      {{ formatTime(event.start) }}
     </div>
     <div class="event-item__time event-item__time--allday" v-else>All day</div>
     <div class="event-item__title">{{ event.title }}</div>
-    <div class="event-item__location" v-if="event.location">📍 {{ event.location }}</div>
-    <div class="event-item__description" v-if="event.description">{{ event.description }}</div>
+    <div class="event-item__duration" v-if="!event.allDay && !!formatDuration(event.start, event.end)">
+      {{ formatDuration(event.start, event.end) }}
+    </div>
   </div>
 </template>
 
@@ -47,16 +60,9 @@ function formatTime(date) {
   font-weight: bold;
 }
 
-.event-item__location {
+.event-item__duration {
   font-size: 0.75rem;
   color: #555;
   margin-top: 0.15rem;
-}
-
-.event-item__description {
-  font-size: 0.75rem;
-  color: #333;
-  margin-top: 0.15rem;
-  white-space: pre-line;
 }
 </style>
