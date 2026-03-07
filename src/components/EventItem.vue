@@ -34,7 +34,7 @@ function formatDuration(start, end) {
 </script>
 
 <template>
-  <div class="event-item">
+  <div class="event-item" :class="{ 'event-item--tentative': event.status === 'TENTATIVE' }">
     <div class="event-item__time" v-if="!event.allDay">
       {{ formatTime(event.start) }}
     </div>
@@ -72,5 +72,13 @@ function formatDuration(start, end) {
   font-size: 0.75rem;
   color: #555;
   margin-top: 0.15rem;
+}
+
+.event-item--tentative {
+  border-style: dashed;
+}
+
+.event-item--tentative .event-item__title {
+  font-style: italic;
 }
 </style>
