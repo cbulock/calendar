@@ -174,18 +174,20 @@ function expandRRule(event, rangeStart, rangeEnd) {
     // Collect candidate occurrence start times for this iteration
     let candidates
     if (p.FREQ === 'WEEKLY' && byDay && byDay.length > 0) {
-      // Generate all matching weekdays in the week containing cursor
+      // Generate all matching weekdays in the week containing cursor.
+      // Use UTC APIs throughout so expansion is timezone-agnostic and
+      // produces consistent results regardless of the runtime's local TZ.
       const sunday = new Date(cursor)
-      sunday.setDate(cursor.getDate() - cursor.getDay())
+      sunday.setUTCDate(cursor.getUTCDate() - cursor.getUTCDay())
       candidates = byDay
         .map((dow) => {
           const d = new Date(sunday)
-          d.setDate(sunday.getDate() + dow)
-          d.setHours(
-            event.start.getHours(),
-            event.start.getMinutes(),
-            event.start.getSeconds(),
-            event.start.getMilliseconds(),
+          d.setUTCDate(sunday.getUTCDate() + dow)
+          d.setUTCHours(
+            event.start.getUTCHours(),
+            event.start.getUTCMinutes(),
+            event.start.getUTCSeconds(),
+            event.start.getUTCMilliseconds(),
           )
           return d
         })
