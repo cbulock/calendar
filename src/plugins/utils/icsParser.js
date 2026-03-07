@@ -229,7 +229,7 @@ export function expandEvents(events, rangeStart, rangeEnd) {
  * Parse ICS text into an array of calendar event objects.
  * @param {string} icsText - Raw ICS/iCalendar text
  * @param {string} sourceId - Plugin ID to tag each event with
- * @returns {Array<{id, title, start, end, allDay, description, location, source, rrule?, exdates?}>}
+ * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?}>}
  */
 export function parseICSData(icsText, sourceId) {
   const lines = unfoldLines(icsText)
@@ -260,6 +260,7 @@ export function parseICSData(icsText, sourceId) {
           allDay: Boolean(allDay),
           description: current.description || '',
           location: current.location || '',
+          status: current.status || '',
           source: sourceId,
         }
         if (current.rrule) event.rrule = current.rrule
@@ -298,6 +299,9 @@ export function parseICSData(icsText, sourceId) {
           break
         case 'location':
           current.location = value
+          break
+        case 'status':
+          current.status = value.toUpperCase()
           break
         case 'rrule':
           current.rrule = value

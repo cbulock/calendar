@@ -78,6 +78,40 @@ END:VCALENDAR`
     expect(events[0].description).toBe('Line one\nLine two')
   })
 
+  it('parses STATUS:TENTATIVE and sets status field', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tentative-001@test
+SUMMARY:Maybe Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('sets status to empty string when STATUS is absent', () => {
+    const events = parseICSData(SAMPLE_ICS, 'test-source')
+    const meeting = events.find((e) => e.id === 'event-001@test')
+    expect(meeting.status).toBe('')
+  })
+
+  it('parses STATUS:CONFIRMED correctly', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:confirmed-001@test
+SUMMARY:Confirmed Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('CONFIRMED')
+  })
+
   it('stores rrule on recurring events', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT

@@ -129,6 +129,7 @@ function isToday(date) {
               v-for="event in cell.events.slice(0, 3)"
               :key="event.id"
               class="event-chip"
+              :class="{ 'event-chip--tentative': event.status === 'TENTATIVE' }"
               :title="event.title"
             >
               {{ event.title }}
@@ -249,5 +250,12 @@ function isToday(date) {
 .event-more {
   font-size: 0.6rem;
   color: #444;
+}
+
+.event-chip--tentative {
+  background: #fff;
+  color: #222;
+  border: 1px dashed #222;
+  font-style: italic;
 }
 </style>
