@@ -33,6 +33,21 @@ const dayAfterTomorrowStart = computed(() =>
 const todayEnd = computed(() => tomorrowStart.value)
 const tomorrowEnd = computed(() => dayAfterTomorrowStart.value)
 
+// UTC-based day boundaries for floating-time events.
+// Floating times are stored with their wall-clock hours/minutes in UTC (e.g.,
+// a "9 AM" floating event is stored as T09:00:00Z).  Filtering them against
+// timezone-aware boundaries would shift them by the UTC offset, placing them
+// on the wrong day for non-UTC users.  Using UTC midnight avoids that.
+const todayUTCStart = computed(() =>
+  new Date(Date.UTC(todayParts.value.year, todayParts.value.month, todayParts.value.day)),
+)
+const tomorrowUTCStart = computed(() =>
+  new Date(Date.UTC(todayParts.value.year, todayParts.value.month, todayParts.value.day + 1)),
+)
+const dayAfterTomorrowUTCStart = computed(() =>
+  new Date(Date.UTC(todayParts.value.year, todayParts.value.month, todayParts.value.day + 2)),
+)
+
 const todayLabel = computed(() =>
   now.value.toLocaleDateString('default', {
     weekday: 'long',
@@ -50,19 +65,34 @@ const tomorrowLabel = computed(() =>
   }),
 )
 
-function eventsForDay(dayStart, dayEnd) {
+function eventsForDay(dayStart, dayEnd, utcDayStart, utcDayEnd) {
   return events.value.filter((e) => {
     const evtStart = new Date(e.start)
     const evtEnd = e.end ? new Date(e.end) : evtStart
+    if (e.floating) {
+      // Floating-time events: filter by UTC day boundaries so their wall-clock
+      // date is honoured regardless of the viewer's UTC offset.
+      return evtStart < utcDayEnd && evtEnd > utcDayStart
+    }
     return evtStart < dayEnd && evtEnd > dayStart
   })
 }
 
-const todayEvents = computed(() => eventsForDay(todayStart.value, todayEnd.value))
-const tomorrowEvents = computed(() => eventsForDay(tomorrowStart.value, tomorrowEnd.value))
+const todayEvents = computed(() =>
+  eventsForDay(todayStart.value, todayEnd.value, todayUTCStart.value, tomorrowUTCStart.value),
+)
+const tomorrowEvents = computed(() =>
+  eventsForDay(tomorrowStart.value, tomorrowEnd.value, tomorrowUTCStart.value, dayAfterTomorrowUTCStart.value),
+)
 
 async function loadEvents() {
-  await fetchEvents(todayStart.value, tomorrowEnd.value)
+  // Fetch events covering both timezone-aware and UTC day boundaries so that
+  // floating-time events (which are filtered by UTC day) are included even
+  // when the user's UTC offset would otherwise exclude them (e.g. a floating
+  // "02:00" event for a UTC-5 user whose TZ day starts at 05:00 UTC).
+  const fetchStart = new Date(Math.min(todayStart.value.getTime(), todayUTCStart.value.getTime()))
+  const fetchEnd = new Date(Math.max(tomorrowEnd.value.getTime(), dayAfterTomorrowUTCStart.value.getTime()))
+  await fetchEvents(fetchStart, fetchEnd)
 }
 
 onMounted(() => {

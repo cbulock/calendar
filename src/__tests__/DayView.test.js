@@ -153,9 +153,26 @@ describe('DayView', () => {
     expect(mockFetchEvents).toHaveBeenCalledOnce()
     const [start, end] = mockFetchEvents.mock.calls[0]
     const dayAfterTomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2)
-    // start should be today's midnight
-    expect(start.getDate()).toBe(todayMidnight.getDate())
-    // end should be day-after-tomorrow's midnight (half-open interval covering all of tomorrow)
-    expect(end.getDate()).toBe(dayAfterTomorrow.getDate())
+    // start should be on or before today's date (may be UTC midnight, before local midnight)
+    expect(start.getDate()).toBeLessThanOrEqual(todayMidnight.getDate())
+    // end should be on or after day-after-tomorrow's midnight
+    expect(end >= new Date(dayAfterTomorrow.getFullYear(), dayAfterTomorrow.getMonth(), dayAfterTomorrow.getDate())).toBe(true)
+  })
+
+  it('renders floating-time events for today in the today section', async () => {
+    // A floating event stored as T10:00:00Z should appear on today by UTC date
+    const todayUTCNoon = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 10, 0, 0))
+    mockEvents.value = [{ ...makeEvent('fe1', 'Floating Meeting', todayUTCNoon, new Date(todayUTCNoon.getTime() + 3600000)), floating: true }]
+    const wrapper = mountDayView()
+    const todaySection = wrapper.find('.day-section--today')
+    expect(todaySection.text()).toContain('Floating Meeting')
+  })
+
+  it('does not show floating events in tomorrow section when they fall on today (UTC)', async () => {
+    const todayUTCNoon = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 10, 0, 0))
+    mockEvents.value = [{ ...makeEvent('fe2', 'Floating Today Only', todayUTCNoon, new Date(todayUTCNoon.getTime() + 3600000)), floating: true }]
+    const wrapper = mountDayView()
+    const tomorrowSection = wrapper.find('.day-section--tomorrow')
+    expect(tomorrowSection.text()).not.toContain('Floating Today Only')
   })
 })

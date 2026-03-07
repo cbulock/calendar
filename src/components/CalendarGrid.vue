@@ -93,13 +93,21 @@ const grid = computed(() => {
   }
 
   // Assign events to all day cells they span ([start, end) range overlap)
-  // Cell boundaries are computed as midnight in the configured timezone
+  // Cell boundaries are computed as midnight in the configured timezone for
+  // timezone-aware events.  Floating-time events use UTC midnight instead so
+  // their wall-clock calendar date is preserved regardless of the viewer's
+  // UTC offset.
   for (const cell of cells) {
     const cellStart = midnightInTimezone(cell.year, cell.month, cell.day, props.timezone)
     const cellEnd = midnightInTimezone(cell.year, cell.month, cell.day + 1, props.timezone)
+    const utcCellStart = new Date(Date.UTC(cell.year, cell.month, cell.day))
+    const utcCellEnd = new Date(Date.UTC(cell.year, cell.month, cell.day + 1))
     cell.events = props.events.filter((e) => {
       const evtStart = new Date(e.start)
       const evtEnd = e.end ? new Date(e.end) : evtStart
+      if (e.floating) {
+        return evtStart < utcCellEnd && evtEnd > utcCellStart
+      }
       return evtStart < cellEnd && evtEnd > cellStart
     })
   }
