@@ -30,15 +30,17 @@ function hashString(str) {
 }
 
 /**
- * Extract the TZID parameter value from an ICS property name string.
- * e.g. "dtstart;tzid=America/New_York" → "America/New_York"
- * @param {string} propFull - Lowercased property name including parameters
+ * Extract the TZID parameter value from an ICS property line's parameter segment.
+ * Preserves the original casing of the TZID value (IANA timezone names are case-sensitive).
+ * Also strips optional surrounding quotes from the value.
+ * e.g. the original line segment "DTSTART;TZID=America/New_York" → "America/New_York"
+ * @param {string} rawParamSegment - The raw (un-lowercased) text before the colon, e.g. "DTSTART;TZID=America/New_York"
  * @returns {string|null}
  */
-function extractTZID(propFull) {
-  for (const param of propFull.split(';').slice(1)) {
+function extractTZID(rawParamSegment) {
+  for (const param of rawParamSegment.split(';').slice(1)) {
     if (param.toLowerCase().startsWith('tzid=')) {
-      return param.slice(5)
+      return param.slice(5).replace(/^"|"$/g, '')
     }
   }
   return null
@@ -71,7 +73,7 @@ function parseICSDate(value, tzid) {
     try {
       return dayjs.tz(clean, 'YYYYMMDDTHHmmss', tzid).toDate()
     } catch {
-      // If the TZID is invalid/unsupported, fall back to floating/local time
+      // Unknown/unsupported TZID — fall through to floating-time treatment
     }
   }
   // Floating time (no timezone specified) — treat as local/server time
@@ -133,7 +135,8 @@ export function parseICSData(icsText, sourceId) {
       // Parse property name (may include parameters like DTSTART;TZID=...)
       const colonIdx = line.indexOf(':')
       if (colonIdx === -1) continue
-      const propFull = line.slice(0, colonIdx).toLowerCase()
+      const rawPropSegment = line.slice(0, colonIdx)
+      const propFull = rawPropSegment.toLowerCase()
       const value = line.slice(colonIdx + 1)
       // Strip parameters (e.g. DTSTART;TZID=America/New_York -> dtstart)
       const prop = propFull.split(';')[0]
@@ -148,11 +151,11 @@ export function parseICSData(icsText, sourceId) {
         case 'dtstart':
           // Keep full line value so we can detect DATE-only
           current.dtstart = line.slice(colonIdx + 1)
-          current.dtstart_tzid = extractTZID(propFull)
+          current.dtstart_tzid = extractTZID(rawPropSegment)
           break
         case 'dtend':
           current.dtend = line.slice(colonIdx + 1)
-          current.dtend_tzid = extractTZID(propFull)
+          current.dtend_tzid = extractTZID(rawPropSegment)
           break
         case 'description':
           current.description = value.replace(/\\n/g, '\n').replace(/\\,/g, ',')

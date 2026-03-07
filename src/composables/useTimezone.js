@@ -31,7 +31,10 @@ function detectBrowserTimezone() {
 }
 
 /** @type {import('vue').Ref<string>} */
-const timezoneRef = ref(localStorage.getItem(STORAGE_KEY) || detectBrowserTimezone())
+const timezoneRef = ref(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY)) ||
+    detectBrowserTimezone(),
+)
 
 /**
  * Set the preferred timezone and persist it.
@@ -39,7 +42,9 @@ const timezoneRef = ref(localStorage.getItem(STORAGE_KEY) || detectBrowserTimezo
  */
 function setTimezone(tz) {
   timezoneRef.value = tz
-  localStorage.setItem(STORAGE_KEY, tz)
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(STORAGE_KEY, tz)
+  }
 }
 
 /**
@@ -53,13 +58,18 @@ function setTimezone(tz) {
  * @returns {Date}
  */
 export function midnightInTimezone(year, month, day, tz) {
-  // Use a UTC Date to resolve overflow/underflow (e.g., day -4 → prev month, day 32 → next month)
-  // so that host-local timezone/DST transitions do not affect the calendar result.
+  // Use Date.UTC to resolve overflow/underflow in pure calendar arithmetic so that
+  // host-local timezone/DST transitions do not affect the resolved calendar date.
   const resolved = new Date(Date.UTC(year, month, day))
   const ry = resolved.getUTCFullYear()
   const rm = String(resolved.getUTCMonth() + 1).padStart(2, '0')
   const rd = String(resolved.getUTCDate()).padStart(2, '0')
-  return dayjs.tz(`${ry}-${rm}-${rd}T00:00:00`, tz).toDate()
+  try {
+    return dayjs.tz(`${ry}-${rm}-${rd}T00:00:00`, tz).toDate()
+  } catch {
+    // Invalid/unsupported timezone — fall back to UTC midnight
+    return new Date(Date.UTC(ry, parseInt(rm) - 1, parseInt(rd)))
+  }
 }
 
 /**
