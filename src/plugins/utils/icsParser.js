@@ -351,8 +351,9 @@ export function parseICSData(icsText, sourceId) {
         case 'exdate': {
           // EXDATE may contain multiple comma-separated datetime values
           if (!current.exdates) current.exdates = []
+          const exdateTZID = extractTZID(rawPropSegment)
           for (const dv of value.split(',')) {
-            const d = parseICSDate(dv.trim())
+            const d = parseICSDate(dv.trim(), exdateTZID)
             if (d) current.exdates.push(d)
           }
           break
