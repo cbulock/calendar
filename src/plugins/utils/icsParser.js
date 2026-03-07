@@ -225,9 +225,13 @@ function expandRRule(event, rangeStart, rangeEnd) {
         cursor = new Date(cursor)
         cursor.setFullYear(cursor.getFullYear() + interval)
         break
-      default:
-        // Unknown frequency — return the original event unchanged
-        return [event]
+      default: {
+        // Unknown frequency — cannot reliably expand; return a single
+        // base event without recurrence-only fields to keep shape consistent.
+        // eslint-disable-next-line no-unused-vars
+        const { rrule: _r, exdates: _e, ...rest } = event
+        return [{ ...rest }]
+      }
     }
   }
 
