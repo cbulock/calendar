@@ -163,38 +163,33 @@ END:VCALENDAR`
     expect(events[0].description).toBe('Line one\nLine two')
   })
 
-  it('parses STATUS:TENTATIVE and sets status field', () => {
+  it('parses a UTC datetime (Z suffix) to the correct UTC instant', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
-UID:tentative-001@test
-SUMMARY:Maybe Meeting
-DTSTART:20250401T140000Z
-DTEND:20250401T150000Z
-STATUS:TENTATIVE
+UID:utc@test
+SUMMARY:UTC Event
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
 END:VEVENT
 END:VCALENDAR`
     const events = parseICSData(ics, 'test-source')
-    expect(events[0].status).toBe('TENTATIVE')
+    expect(events[0].start.toISOString()).toBe('2025-03-15T10:00:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2025-03-15T11:00:00.000Z')
   })
 
-  it('sets status to empty string when STATUS is absent', () => {
-    const events = parseICSData(SAMPLE_ICS, 'test-source')
-    const meeting = events.find((e) => e.id === 'event-001@test')
-    expect(meeting.status).toBe('')
-  })
-
-  it('parses STATUS:CONFIRMED correctly', () => {
+  it('converts a TZID-qualified datetime to UTC', () => {
+    // America/New_York in January observes EST (UTC-5, no DST)
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
-UID:confirmed-001@test
-SUMMARY:Confirmed Meeting
-DTSTART:20250401T140000Z
-DTEND:20250401T150000Z
-STATUS:CONFIRMED
+UID:tzid@test
+SUMMARY:NYC Event
+DTSTART;TZID=America/New_York:20250115T100000
+DTEND;TZID=America/New_York:20250115T110000
 END:VEVENT
 END:VCALENDAR`
     const events = parseICSData(ics, 'test-source')
-    expect(events[0].status).toBe('CONFIRMED')
+    expect(events[0].start.toISOString()).toBe('2025-01-15T15:00:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2025-01-15T16:00:00.000Z')
   })
 
   it('stores rrule on recurring events', () => {

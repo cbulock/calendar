@@ -128,6 +128,9 @@ function expandRRule(event, rangeStart, rangeEnd) {
   if (!p.FREQ) return [event]
 
   const interval = Math.max(1, parseInt(p.INTERVAL ?? '1', 10))
+  // Note: parseICSDate checks for a 'Z' suffix first, so UTC UNTIL values are
+  // always parsed as UTC regardless of startTzid. startTzid is only applied
+  // to floating-time (non-Z) UNTIL values per RFC 5545 § 3.3.10.
   const until = p.UNTIL ? parseICSDate(p.UNTIL, event.startTzid) : null
   const maxCount = p.COUNT ? parseInt(p.COUNT, 10) : null
 
@@ -202,7 +205,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
       const occEnd = new Date(occ.getTime() + duration)
       if (occEnd >= rangeStart && occ <= rangeEnd) {
         // eslint-disable-next-line no-unused-vars
-        const { rrule: _r, exdates: _e, ...rest } = event
+        const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
         results.push({ ...rest, start: occ, end: occEnd, id: `${event.id}__occ__${occ.getTime()}` })
       }
     }
@@ -229,7 +232,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
         // Unknown frequency — cannot reliably expand; return a single
         // base event without recurrence-only fields to keep shape consistent.
         // eslint-disable-next-line no-unused-vars
-        const { rrule: _r, exdates: _e, ...rest } = event
+        const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
         return [{ ...rest }]
       }
     }
@@ -254,7 +257,7 @@ export function expandEvents(events, rangeStart, rangeEnd) {
       results.push(...expandRRule(event, rangeStart, rangeEnd))
     } else {
       // eslint-disable-next-line no-unused-vars
-      const { rrule: _r, exdates: _e, ...rest } = event
+      const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
       results.push(rest)
     }
   }
@@ -302,6 +305,7 @@ export function parseICSData(icsText, sourceId) {
           status: current.status || '',
           source: sourceId,
         }
+        if (current.dtstart_tzid) event.startTzid = current.dtstart_tzid
         if (current.rrule) event.rrule = current.rrule
         if (current.exdates && current.exdates.length > 0) event.exdates = current.exdates
         events.push(event)
