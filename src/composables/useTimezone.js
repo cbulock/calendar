@@ -53,12 +53,12 @@ function setTimezone(tz) {
  * @returns {Date}
  */
 export function midnightInTimezone(year, month, day, tz) {
-  // Use JS Date to resolve overflow/underflow (e.g., day -4 → prev month, day 32 → next month).
-  // This is purely calendar arithmetic — the timezone of the Date object is irrelevant here.
-  const resolved = new Date(year, month, day)
-  const ry = resolved.getFullYear()
-  const rm = String(resolved.getMonth() + 1).padStart(2, '0')
-  const rd = String(resolved.getDate()).padStart(2, '0')
+  // Use a UTC Date to resolve overflow/underflow (e.g., day -4 → prev month, day 32 → next month)
+  // so that host-local timezone/DST transitions do not affect the calendar result.
+  const resolved = new Date(Date.UTC(year, month, day))
+  const ry = resolved.getUTCFullYear()
+  const rm = String(resolved.getUTCMonth() + 1).padStart(2, '0')
+  const rd = String(resolved.getUTCDate()).padStart(2, '0')
   return dayjs.tz(`${ry}-${rm}-${rd} 00:00:00`, tz).toDate()
 }
 
