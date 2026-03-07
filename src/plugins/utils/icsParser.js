@@ -68,7 +68,11 @@ function parseICSDate(value, tzid) {
   }
   if (tzid) {
     // Local time in a named timezone — day.js converts to UTC internally
-    return dayjs.tz(clean, 'YYYYMMDDTHHmmss', tzid).toDate()
+    try {
+      return dayjs.tz(clean, 'YYYYMMDDTHHmmss', tzid).toDate()
+    } catch {
+      // If the TZID is invalid/unsupported, fall back to floating/local time
+    }
   }
   // Floating time (no timezone specified) — treat as local/server time
   return dayjs(clean, 'YYYYMMDDTHHmmss').toDate()
