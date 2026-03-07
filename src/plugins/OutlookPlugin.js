@@ -5,7 +5,7 @@
  * using its published ICS URL.
  */
 
-import { parseICSData } from './utils/icsParser.js'
+import { parseICSData, expandEvents } from './utils/icsParser.js'
 
 const OutlookPlugin = {
   id: 'outlook',
@@ -55,7 +55,8 @@ const OutlookPlugin = {
       throw new Error(`Failed to fetch Outlook calendar: ${response.statusText}`)
     }
     const icsText = await response.text()
-    const events = parseICSData(icsText, this.id)
+    const rawEvents = parseICSData(icsText, this.id)
+    const events = expandEvents(rawEvents, start, end)
     return events.filter((e) => e.end >= start && e.start <= end)
   },
 }

@@ -5,7 +5,7 @@
  * Proton Calendar allows sharing via encrypted ICS links.
  */
 
-import { parseICSData } from './utils/icsParser.js'
+import { parseICSData, expandEvents } from './utils/icsParser.js'
 
 const ProtonCalendarPlugin = {
   id: 'proton-calendar',
@@ -54,7 +54,8 @@ const ProtonCalendarPlugin = {
       throw new Error(`Failed to fetch Proton Calendar: ${response.statusText}`)
     }
     const icsText = await response.text()
-    const events = parseICSData(icsText, this.id)
+    const rawEvents = parseICSData(icsText, this.id)
+    const events = expandEvents(rawEvents, start, end)
     return events.filter((e) => e.end >= start && e.start <= end)
   },
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseICSData } from '../plugins/utils/icsParser.js'
+import { parseICSData, expandEvents } from '../plugins/utils/icsParser.js'
 
 const SAMPLE_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -77,4 +77,282 @@ END:VCALENDAR`
     const events = parseICSData(ics, 'src')
     expect(events[0].description).toBe('Line one\nLine two')
   })
+
+  it('stores rrule on recurring events', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:recurring@test
+SUMMARY:Weekly Standup
+DTSTART:20230103T090000Z
+DTEND:20230103T093000Z
+RRULE:FREQ=WEEKLY;BYDAY=MO
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events).toHaveLength(1)
+    expect(events[0].rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
+  })
+
+  it('parses exdate values on recurring events', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:recurring-ex@test
+SUMMARY:Meeting
+DTSTART:20230103T090000Z
+DTEND:20230103T093000Z
+RRULE:FREQ=WEEKLY
+EXDATE:20230110T090000Z
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events[0].exdates).toHaveLength(1)
+    expect(events[0].exdates[0]).toBeInstanceOf(Date)
+  })
+
+  it('unfolds lines with LF-only line endings', () => {
+    // Some ICS generators use LF + space for folding instead of CRLF + space
+    const ics =
+      'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:fold@test\nSUMMARY:Folded \n title\nDTSTART:20250101T120000Z\nDTEND:20250101T130000Z\nEND:VEVENT\nEND:VCALENDAR'
+    const events = parseICSData(ics, 'src')
+    expect(events[0].title).toBe('Folded title')
+  })
 })
+
+describe('expandEvents', () => {
+  const rangeStart = new Date('2025-01-01T00:00:00Z')
+  const rangeEnd = new Date('2025-03-31T23:59:59Z')
+
+  it('passes non-recurring events through unchanged', () => {
+    const events = [
+      {
+        id: 'one-off',
+        title: 'One Off',
+        start: new Date('2025-02-01T10:00:00Z'),
+        end: new Date('2025-02-01T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('one-off')
+    expect(result[0].title).toBe('One Off')
+  })
+
+  it('expands a daily recurring event', () => {
+    const baseStart = new Date('2024-12-30T09:00:00Z') // before rangeStart
+    const baseEnd = new Date('2024-12-30T09:30:00Z')
+    const events = [
+      {
+        id: 'daily',
+        title: 'Daily Standup',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=DAILY',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Expect occurrences in Jan–Mar 2025 (31 + 28 + 31 = 90 days)
+    expect(result.length).toBe(90)
+    expect(result[0].start).toEqual(new Date('2025-01-01T09:00:00Z'))
+    expect(result[0].end).toEqual(new Date('2025-01-01T09:30:00Z'))
+    // IDs should be unique per occurrence
+    const ids = new Set(result.map((e) => e.id))
+    expect(ids.size).toBe(90)
+    // rrule and exdates should not appear on expanded occurrences
+    expect(result[0].rrule).toBeUndefined()
+    expect(result[0].exdates).toBeUndefined()
+  })
+
+  it('expands a weekly recurring event started long ago', () => {
+    // Simulates the typical Proton Calendar scenario:
+    // event created 2 years ago, recurs weekly
+    const baseStart = new Date('2023-01-02T10:00:00Z') // Monday, 2 years before range
+    const baseEnd = new Date('2023-01-02T11:00:00Z')
+    const events = [
+      {
+        id: 'weekly-old@proton',
+        title: 'Weekly Meeting',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'proton-calendar',
+        rrule: 'FREQ=WEEKLY',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Jan–Mar 2025 has 13 Mondays
+    expect(result.length).toBe(13)
+    // All occurrences are Mondays
+    result.forEach((e) => expect(e.start.getUTCDay()).toBe(1))
+    // All within the requested range
+    result.forEach((e) => {
+      expect(e.start >= rangeStart || e.end >= rangeStart).toBe(true)
+      expect(e.start <= rangeEnd).toBe(true)
+    })
+  })
+
+  it('expands a weekly recurring event with BYDAY', () => {
+    const baseStart = new Date('2023-01-02T10:00:00Z') // Monday
+    const baseEnd = new Date('2023-01-02T10:30:00Z')
+    const events = [
+      {
+        id: 'mwf@test',
+        title: 'MWF Event',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;BYDAY=MO,WE,FR',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Check all are Mon/Wed/Fri
+    result.forEach((e) => expect([1, 3, 5]).toContain(e.start.getUTCDay()))
+    // Jan 2025: 14 Mon/Wed/Fri, Feb: 12, Mar: 13 → 39 total
+    expect(result.length).toBe(39)
+  })
+
+  it('expands a monthly recurring event', () => {
+    const baseStart = new Date('2024-06-15T14:00:00Z')
+    const baseEnd = new Date('2024-06-15T15:00:00Z')
+    const events = [
+      {
+        id: 'monthly@test',
+        title: 'Monthly Review',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result.length).toBe(3) // Jan 15, Feb 15, Mar 15
+    expect(result[0].start.toISOString()).toBe('2025-01-15T14:00:00.000Z')
+    expect(result[1].start.toISOString()).toBe('2025-02-15T14:00:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2025-03-15T14:00:00.000Z')
+  })
+
+  it('expands a yearly recurring event', () => {
+    const baseStart = new Date('2020-03-10T09:00:00Z')
+    const baseEnd = new Date('2020-03-10T10:00:00Z')
+    const events = [
+      {
+        id: 'yearly@test',
+        title: 'Annual Event',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=YEARLY',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result.length).toBe(1)
+    expect(result[0].start.toISOString()).toBe('2025-03-10T09:00:00.000Z')
+  })
+
+  it('respects UNTIL termination', () => {
+    const baseStart = new Date('2025-01-01T09:00:00Z')
+    const baseEnd = new Date('2025-01-01T09:30:00Z')
+    const events = [
+      {
+        id: 'until@test',
+        title: 'Limited Series',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=DAILY;UNTIL=20250110T000000Z',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // UNTIL=20250110T000000Z: the Jan 10 occurrence at 09:00Z is after the UNTIL, so only Jan 1–9
+    expect(result.length).toBe(9) // Jan 1–9
+  })
+
+  it('respects COUNT termination', () => {
+    const baseStart = new Date('2025-01-01T09:00:00Z')
+    const baseEnd = new Date('2025-01-01T09:30:00Z')
+    const events = [
+      {
+        id: 'count@test',
+        title: 'Counted Series',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=DAILY;COUNT=5',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result.length).toBe(5) // Jan 1–5
+  })
+
+  it('respects COUNT when history is before the range', () => {
+    // Event started before rangeStart; only 3 total occurrences
+    const baseStart = new Date('2024-12-30T09:00:00Z')
+    const baseEnd = new Date('2024-12-30T09:30:00Z')
+    const events = [
+      {
+        id: 'count-history@test',
+        title: 'Short Series',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=DAILY;COUNT=3',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Dec 30, Dec 31 are before rangeStart; only Jan 1 is within range
+    expect(result.length).toBe(1)
+    expect(result[0].start.toISOString()).toBe('2025-01-01T09:00:00.000Z')
+  })
+
+  it('excludes EXDATE occurrences', () => {
+    const baseStart = new Date('2025-01-06T10:00:00Z') // Monday
+    const baseEnd = new Date('2025-01-06T11:00:00Z')
+    const skipDate = new Date('2025-01-13T10:00:00Z') // next Monday — excluded
+    const events = [
+      {
+        id: 'exdate@test',
+        title: 'Weekly with Skip',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY',
+        exdates: [skipDate],
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    const starts = result.map((e) => e.start.toISOString())
+    expect(starts).not.toContain('2025-01-13T10:00:00.000Z')
+    // Jan 6 should still be included
+    expect(starts).toContain('2025-01-06T10:00:00.000Z')
+  })
+
+  it('handles INTERVAL > 1', () => {
+    const baseStart = new Date('2025-01-01T09:00:00Z')
+    const baseEnd = new Date('2025-01-01T09:30:00Z')
+    const events = [
+      {
+        id: 'biweekly@test',
+        title: 'Bi-Weekly',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;INTERVAL=2',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Jan 1, Jan 15, Jan 29, Feb 12, Feb 26, Mar 12, Mar 26 = 7 occurrences
+    expect(result.length).toBe(7)
+  })
+})
+

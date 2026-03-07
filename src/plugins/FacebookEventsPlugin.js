@@ -5,7 +5,7 @@
  * exported ICS feed URL.
  */
 
-import { parseICSData } from './utils/icsParser.js'
+import { parseICSData, expandEvents } from './utils/icsParser.js'
 
 const FacebookEventsPlugin = {
   id: 'facebook-events',
@@ -57,7 +57,8 @@ const FacebookEventsPlugin = {
       throw new Error(`Failed to fetch Facebook Events: ${response.statusText}`)
     }
     const icsText = await response.text()
-    const events = parseICSData(icsText, this.id)
+    const rawEvents = parseICSData(icsText, this.id)
+    const events = expandEvents(rawEvents, start, end)
     return events.filter((e) => e.end >= start && e.start <= end)
   },
 }
