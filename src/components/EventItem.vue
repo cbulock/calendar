@@ -1,4 +1,6 @@
 <script setup>
+import { useTimezone } from '../composables/useTimezone.js'
+
 const props = defineProps({
   event: {
     type: Object,
@@ -6,10 +8,16 @@ const props = defineProps({
   },
 })
 
+const { timezone } = useTimezone()
+
 function formatTime(date) {
   if (!date) return ''
   const d = new Date(date)
-  return d.toLocaleTimeString('default', { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleTimeString('default', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone.value,
+  })
 }
 
 function formatDuration(start, end) {

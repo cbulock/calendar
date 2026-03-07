@@ -77,4 +77,38 @@ END:VCALENDAR`
     const events = parseICSData(ics, 'src')
     expect(events[0].description).toBe('Line one\nLine two')
   })
+
+  it('correctly converts DTSTART with TZID to UTC', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tzid-test@test
+SUMMARY:New York Meeting
+DTSTART;TZID=America/New_York:20250115T100000
+DTEND;TZID=America/New_York:20250115T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    const event = events.find((e) => e.id === 'tzid-test@test')
+    expect(event).toBeDefined()
+    expect(event.allDay).toBe(false)
+    // 10:00 AM New York (EST = UTC-5) → 15:00 UTC
+    expect(event.start.toISOString()).toBe('2025-01-15T15:00:00.000Z')
+    expect(event.end.toISOString()).toBe('2025-01-15T16:00:00.000Z')
+  })
+
+  it('treats explicit UTC events (Z suffix) as UTC', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:utc-test@test
+SUMMARY:UTC Event
+DTSTART:20250315T140000Z
+DTEND:20250315T150000Z
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    const event = events.find((e) => e.id === 'utc-test@test')
+    expect(event).toBeDefined()
+    expect(event.start.toISOString()).toBe('2025-03-15T14:00:00.000Z')
+    expect(event.end.toISOString()).toBe('2025-03-15T15:00:00.000Z')
+  })
 })

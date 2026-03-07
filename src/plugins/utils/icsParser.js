@@ -5,6 +5,15 @@
  * Only handles the properties needed for calendar display.
  */
 
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc.js'
+import customParseFormat from 'dayjs/plugin/customParseFormat.js'
+import timezone from 'dayjs/plugin/timezone.js'
+
+dayjs.extend(utc)
+dayjs.extend(customParseFormat)
+dayjs.extend(timezone)
+
 /**
  * Compute a simple deterministic hash string from the given input string.
  * Uses a djb2-style algorithm and returns a hex string.
@@ -21,32 +30,48 @@ function hashString(str) {
 }
 
 /**
+ * Extract the TZID parameter value from an ICS property name string.
+ * e.g. "dtstart;tzid=America/New_York" → "America/New_York"
+ * @param {string} propFull - Lowercased property name including parameters
+ * @returns {string|null}
+ */
+function extractTZID(propFull) {
+  for (const param of propFull.split(';').slice(1)) {
+    if (param.toLowerCase().startsWith('tzid=')) {
+      return param.slice(5)
+    }
+  }
+  return null
+}
+
+/**
  * Parse an ICS date string into a JavaScript Date.
  * Handles DATE-only (YYYYMMDD) and DATETIME (YYYYMMDDTHHmmssZ) formats.
- * @param {string} value - Raw ICS date value
+ * When a TZID is provided, the local datetime is properly converted to UTC
+ * using day.js timezone support.
+ * @param {string} value - Raw ICS date value (after the colon)
+ * @param {string|null} tzid - IANA timezone extracted from property parameters
  * @returns {Date}
  */
-function parseICSDate(value) {
+function parseICSDate(value, tzid) {
   if (!value) return null
   // Strip VALUE=DATE: or TZID=... prefixes that may be embedded in the value
   const clean = value.split(':').pop().trim()
   if (clean.length === 8) {
-    // DATE only: YYYYMMDD
-    const y = clean.slice(0, 4)
-    const m = clean.slice(4, 6)
-    const d = clean.slice(6, 8)
-    return new Date(`${y}-${m}-${d}T00:00:00`)
+    // DATE only: YYYYMMDD — all-day, not timezone-sensitive for boundaries
+    return dayjs(clean, 'YYYYMMDD').toDate()
   }
   // DATETIME: YYYYMMDDTHHmmss[Z]
-  const y = clean.slice(0, 4)
-  const mo = clean.slice(4, 6)
-  const d = clean.slice(6, 8)
-  const h = clean.slice(9, 11)
-  const min = clean.slice(11, 13)
-  const sec = clean.slice(13, 15)
-  const utc = clean.endsWith('Z')
-  const iso = `${y}-${mo}-${d}T${h}:${min}:${sec}${utc ? 'Z' : ''}`
-  return new Date(iso)
+  if (clean.endsWith('Z')) {
+    // Explicit UTC — parse directly as UTC
+    return dayjs.utc(clean, 'YYYYMMDDTHHmmss[Z]').toDate()
+  }
+  if (tzid) {
+    // Local time in a named timezone — day.js converts to UTC internally
+    return dayjs.tz(clean, 'YYYYMMDDTHHmmss', tzid).toDate()
+  }
+  // Floating time (no timezone specified) — treat as local/server time
+  return dayjs(clean, 'YYYYMMDDTHHmmss').toDate()
 }
 
 /**
@@ -77,8 +102,8 @@ export function parseICSData(icsText, sourceId) {
     if (line === 'END:VEVENT') {
       if (current) {
         const allDay = current.dtstart && current.dtstart.length === 8
-        const start = parseICSDate(current.dtstart)
-        let end = parseICSDate(current.dtend)
+        const start = parseICSDate(current.dtstart, current.dtstart_tzid)
+        let end = parseICSDate(current.dtend, current.dtend_tzid)
         // For all-day events with no DTEND, set end = start
         if (!end) end = start
         events.push({
@@ -119,9 +144,11 @@ export function parseICSData(icsText, sourceId) {
         case 'dtstart':
           // Keep full line value so we can detect DATE-only
           current.dtstart = line.slice(colonIdx + 1)
+          current.dtstart_tzid = extractTZID(propFull)
           break
         case 'dtend':
           current.dtend = line.slice(colonIdx + 1)
+          current.dtend_tzid = extractTZID(propFull)
           break
         case 'description':
           current.description = value.replace(/\\n/g, '\n').replace(/\\,/g, ',')

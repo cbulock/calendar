@@ -1,5 +1,12 @@
 <script setup>
 import { computed } from 'vue'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+import { midnightInTimezone } from '../composables/useTimezone.js'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const props = defineProps({
   year: {
@@ -14,14 +21,25 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  timezone: {
+    type: String,
+    default: () => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone
+      } catch {
+        return 'UTC'
+      }
+    },
+  },
 })
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const monthLabel = computed(() => {
-  return new Date(props.year, props.month, 1).toLocaleString('default', {
+  return midnightInTimezone(props.year, props.month, 15, props.timezone).toLocaleString('default', {
     month: 'long',
     year: 'numeric',
+    timeZone: props.timezone,
   })
 })
 
@@ -38,13 +56,23 @@ const grid = computed(() => {
 
   // Leading empty cells from previous month
   for (let i = 0; i < startOffset; i++) {
-    const d = new Date(props.year, props.month, 1 - (startOffset - i))
-    cells.push({ date: d, isCurrentMonth: false, events: [] })
+    const dayNum = 1 - (startOffset - i)
+    cells.push({
+      year: props.year,
+      month: props.month,
+      day: dayNum,
+      date: new Date(props.year, props.month, dayNum),
+      isCurrentMonth: false,
+      events: [],
+    })
   }
 
   // Days in this month
   for (let d = 1; d <= lastDay.getDate(); d++) {
     cells.push({
+      year: props.year,
+      month: props.month,
+      day: d,
       date: new Date(props.year, props.month, d),
       isCurrentMonth: true,
       events: [],
@@ -55,6 +83,9 @@ const grid = computed(() => {
   const remaining = 42 - cells.length // 6 rows × 7 cols
   for (let i = 1; i <= remaining; i++) {
     cells.push({
+      year: props.year,
+      month: props.month + 1,
+      day: i,
       date: new Date(props.year, props.month + 1, i),
       isCurrentMonth: false,
       events: [],
@@ -62,18 +93,10 @@ const grid = computed(() => {
   }
 
   // Assign events to all day cells they span ([start, end) range overlap)
+  // Cell boundaries are computed as midnight in the configured timezone
   for (const cell of cells) {
-    if (!cell.date) continue
-    const cellStart = new Date(
-      cell.date.getFullYear(),
-      cell.date.getMonth(),
-      cell.date.getDate(),
-    )
-    const cellEnd = new Date(
-      cell.date.getFullYear(),
-      cell.date.getMonth(),
-      cell.date.getDate() + 1,
-    )
+    const cellStart = midnightInTimezone(cell.year, cell.month, cell.day, props.timezone)
+    const cellEnd = midnightInTimezone(cell.year, cell.month, cell.day + 1, props.timezone)
     cell.events = props.events.filter((e) => {
       const evtStart = new Date(e.start)
       const evtEnd = e.end ? new Date(e.end) : evtStart
@@ -89,14 +112,15 @@ const grid = computed(() => {
   return rows
 })
 
-const today = new Date()
+// Today's date in the configured timezone for highlighting
+const todayParts = computed(() => {
+  const d = dayjs().tz(props.timezone)
+  return { year: d.year(), month: d.month(), day: d.date() }
+})
 
-function isToday(date) {
-  return (
-    date.getFullYear() === today.getFullYear() &&
-    date.getMonth() === today.getMonth() &&
-    date.getDate() === today.getDate()
-  )
+function isToday(cellYear, cellMonth, cellDay) {
+  const t = todayParts.value
+  return cellYear === t.year && cellMonth === t.month && cellDay === t.day
 }
 </script>
 
@@ -114,11 +138,11 @@ function isToday(date) {
       >
         <div
           v-for="cell in row"
-          :key="cell.date.toISOString()"
+          :key="`${cell.year}-${cell.month}-${cell.day}`"
           class="day-cell"
           :class="{
             'day-cell--other-month': !cell.isCurrentMonth,
-            'day-cell--today': cell.isCurrentMonth && isToday(cell.date),
+            'day-cell--today': cell.isCurrentMonth && isToday(cell.year, cell.month, cell.day),
             'day-cell--has-events': cell.events.length > 0,
           }"
           :aria-label="cell.date.toDateString()"
