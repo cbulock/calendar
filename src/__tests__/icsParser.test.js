@@ -231,6 +231,23 @@ END:VCALENDAR`
     expect(events[0].floating).toBe(true)
   })
 
+  it('marks events with an unknown/unsupported TZID as floating: true', () => {
+    // An unrecognised TZID falls through to UTC wall-clock storage in parseICSDate;
+    // the event must also be flagged as floating so the UI filters/renders it correctly.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:bad-tzid@test
+SUMMARY:Bad TZID Event
+DTSTART;TZID=Not/A_Real_Timezone:20250315T100000
+DTEND;TZID=Not/A_Real_Timezone:20250315T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBe(true)
+    // Times should be stored as wall-clock UTC, not shifted by an unknown offset
+    expect(events[0].start.toISOString()).toBe('2025-03-15T10:00:00.000Z')
+  })
+
   it('stores floating-time wall-clock hours/minutes in UTC', () => {
     // A floating "10:00" event must be stored with T10:00:00Z so that the client
     // can display it at "10:00" regardless of the user's UTC offset.

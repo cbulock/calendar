@@ -16,8 +16,15 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(timerId))
 
-// Compute today/tomorrow/day-after-tomorrow boundaries in the configured timezone
-const todayParts = computed(() => getTodayInTimezone(timezone.value))
+// Compute today/tomorrow/day-after-tomorrow boundaries in the configured timezone.
+// Depends on both `now` (updated every minute) and `timezone` so the view
+// rolls over to the next day at midnight without needing a full reload.
+const todayParts = computed(() => {
+  // Reference now.value so Vue tracks it as a dependency; the actual date
+  // parts are derived from the current wall-clock time in the selected zone.
+  void now.value
+  return getTodayInTimezone(timezone.value)
+})
 
 const todayStart = computed(() =>
   midnightInTimezone(todayParts.value.year, todayParts.value.month, todayParts.value.day, timezone.value),

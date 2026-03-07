@@ -47,6 +47,24 @@ function extractTZID(rawParamSegment) {
 }
 
 /**
+ * Returns true if the given IANA timezone identifier is recognised by day.js
+ * (i.e., would NOT fall through to floating-time treatment in parseICSDate).
+ * @param {string} tzid
+ * @returns {boolean}
+ */
+function isSupportedTZID(tzid) {
+  if (!tzid) return false
+  try {
+    // dayjs.tz() throws if the timezone is unknown; use a fixed reference
+    // datetime that won't hit DST edge cases.
+    dayjs.tz('20000101T000000', 'YYYYMMDDTHHmmss', tzid)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Parse an ICS date string into a JavaScript Date.
  * Handles DATE-only (YYYYMMDD) and DATETIME (YYYYMMDDTHHmmssZ) formats.
  * When a TZID is provided, the local datetime is properly converted to UTC
@@ -297,13 +315,15 @@ export function parseICSData(icsText, sourceId) {
         // For all-day events with no DTEND, set end = start
         if (!end) end = start
         // A floating time has no TZID parameter and no explicit UTC 'Z' suffix.
+        // It also includes events whose TZID is unsupported/unknown (those fall
+        // through to the same UTC wall-clock storage path in parseICSDate).
         // All-day events (DATE-only) are excluded — they are inherently date-only
         // and do not have a wall-clock time component.
         const floating =
           !allDay &&
-          !current.dtstart_tzid &&
           Boolean(current.dtstart) &&
-          !current.dtstart.endsWith('Z')
+          !current.dtstart.endsWith('Z') &&
+          !isSupportedTZID(current.dtstart_tzid)
         const event = {
           id:
             current.uid ||
