@@ -90,4 +90,21 @@ describe('EventItem', () => {
     const wrapper = mount(EventItem, { props: { event } })
     expect(wrapper.text()).not.toContain('Discuss quarterly results')
   })
+
+  it('applies tentative class for TENTATIVE events', () => {
+    const event = makeEvent({ status: 'TENTATIVE' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item').classes()).toContain('event-item--tentative')
+  })
+
+  it('does not apply tentative class for non-tentative events', () => {
+    const wrapper = mount(EventItem, { props: { event: makeEvent() } })
+    expect(wrapper.find('.event-item').classes()).not.toContain('event-item--tentative')
+  })
+
+  it('does not apply tentative class for CONFIRMED events', () => {
+    const event = makeEvent({ status: 'CONFIRMED' })
+    const wrapper = mount(EventItem, { props: { event } })
+    expect(wrapper.find('.event-item').classes()).not.toContain('event-item--tentative')
+  })
 })
