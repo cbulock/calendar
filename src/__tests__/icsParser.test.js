@@ -64,6 +64,91 @@ describe('parseICSData', () => {
     expect(events).toHaveLength(0)
   })
 
+  it('filters out cancelled events', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:cancelled-event@test
+SUMMARY:Cancelled Meeting
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
+STATUS:CANCELLED
+END:VEVENT
+BEGIN:VEVENT
+UID:confirmed-event@test
+SUMMARY:Confirmed Meeting
+DTSTART:20250315T120000Z
+DTEND:20250315T130000Z
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+    expect(events[0].id).toBe('confirmed-event@test')
+  })
+
+  it('filters out cancelled events case-insensitively', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:cancelled-lower@test
+SUMMARY:Cancelled Lower
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
+STATUS:cancelled
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(0)
+  })
+
+  it('does not filter out tentative events', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tentative-event@test
+SUMMARY:Tentative Meeting
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+    expect(events[0].id).toBe('tentative-event@test')
+  })
+
+  it('parses STATUS:TENTATIVE and sets status field', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tentative-001@test
+SUMMARY:Maybe Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('sets status to empty string when STATUS is absent', () => {
+    const events = parseICSData(SAMPLE_ICS, 'test-source')
+    const meeting = events.find((e) => e.id === 'event-001@test')
+    expect(meeting.status).toBe('')
+  })
+
+  it('parses STATUS:CONFIRMED correctly', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:confirmed-001@test
+SUMMARY:Confirmed Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('CONFIRMED')
+  })
+
   it('handles events with \\n in descriptions', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
