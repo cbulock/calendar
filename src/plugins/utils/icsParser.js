@@ -128,7 +128,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
   if (!p.FREQ) return [event]
 
   const interval = Math.max(1, parseInt(p.INTERVAL ?? '1', 10))
-  const until = p.UNTIL ? parseICSDate(p.UNTIL) : null
+  const until = p.UNTIL ? parseICSDate(p.UNTIL, event.startTzid) : null
   const maxCount = p.COUNT ? parseInt(p.COUNT, 10) : null
 
   // Strip positional prefix (e.g. "1MO", "-1FR" → "MO", "FR") then map to JS day index.
