@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import EventItem from '../components/EventItem.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone, midnightInTimezone, getTodayInTimezone } from '../composables/useTimezone.js'
@@ -69,6 +69,9 @@ onMounted(() => {
   loadSources()
   loadEvents()
 })
+
+// Re-fetch when the configured timezone changes because the day boundaries shift
+watch(timezone, () => { loadEvents() })
 </script>
 
 <template>
