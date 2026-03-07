@@ -2,16 +2,18 @@
 import { computed, onMounted } from 'vue'
 import CalendarGrid from '../components/CalendarGrid.vue'
 import { useCalendar } from '../composables/useCalendar.js'
+import { useTimezone, getTodayInTimezone, midnightInTimezone } from '../composables/useTimezone.js'
 
 const { events, loading, error, fetchEvents, loadSources, enabledSources } = useCalendar()
+const { timezone } = useTimezone()
 
-// Always display the current month
-const today = new Date()
-const currentYear = today.getFullYear()
-const currentMonth = today.getMonth()
+// Always display the current month in the configured timezone
+const todayInTZ = computed(() => getTodayInTimezone(timezone.value))
+const currentYear = computed(() => todayInTZ.value.year)
+const currentMonth = computed(() => todayInTZ.value.month)
 
-const monthStart = computed(() => new Date(currentYear, currentMonth, 1))
-const monthEnd = computed(() => new Date(currentYear, currentMonth + 1, 0, 23, 59, 59))
+const monthStart = computed(() => midnightInTimezone(currentYear.value, currentMonth.value, 1, timezone.value))
+const monthEnd = computed(() => midnightInTimezone(currentYear.value, currentMonth.value + 1, 1, timezone.value))
 
 async function loadEvents() {
   await fetchEvents(monthStart.value, monthEnd.value)
@@ -38,6 +40,7 @@ onMounted(() => {
       :year="currentYear"
       :month="currentMonth"
       :events="events"
+      :timezone="timezone"
     />
   </div>
 </template>
