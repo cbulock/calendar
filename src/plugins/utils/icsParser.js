@@ -115,7 +115,8 @@ function parseRRuleParams(rrule) {
 
 /**
  * Expand a single recurring event into all occurrences that overlap [rangeStart, rangeEnd].
- * Supports FREQ=DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL, UNTIL, COUNT, and BYDAY.
+ * Supports FREQ=DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL, UNTIL, and COUNT.
+ * For FREQ=WEEKLY, BYDAY is also supported.
  *
  * @param {object} event      - Base event object (must have start, end, rrule, exdates)
  * @param {Date}   rangeStart - Inclusive start of the requested window
