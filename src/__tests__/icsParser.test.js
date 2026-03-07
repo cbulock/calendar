@@ -100,6 +100,21 @@ END:VCALENDAR`
     expect(events).toHaveLength(0)
   })
 
+  it('does not filter out tentative events', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tentative-event@test
+SUMMARY:Tentative Meeting
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+    expect(events[0].id).toBe('tentative-event@test')
+  })
+
   it('handles events with \\n in descriptions', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT

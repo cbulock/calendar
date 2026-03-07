@@ -75,6 +75,9 @@ export function parseICSData(icsText, sourceId) {
       continue
     }
     if (line === 'END:VEVENT') {
+      // RFC 5545 defines three VEVENT statuses: TENTATIVE, CONFIRMED, CANCELLED.
+      // TENTATIVE and CONFIRMED events represent real calendar time and should be
+      // displayed. Only CANCELLED events are hidden.
       if (current && current.status !== 'cancelled') {
         const allDay = current.dtstart && current.dtstart.length === 8
         const start = parseICSDate(current.dtstart)
