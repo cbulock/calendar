@@ -145,7 +145,15 @@ function isToday(cellYear, cellMonth, cellDay) {
             'day-cell--today': cell.isCurrentMonth && isToday(cell.year, cell.month, cell.day),
             'day-cell--has-events': cell.events.length > 0,
           }"
-          :aria-label="cell.date.toDateString()"
+          :aria-label="
+            cell.date.toLocaleDateString(undefined, {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              timeZone: props.timezone,
+            })
+          "
         >
           <span class="day-number">{{ cell.date.getDate() }}</span>
           <ul v-if="cell.events.length > 0" class="event-list">
