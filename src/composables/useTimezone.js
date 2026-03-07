@@ -59,7 +59,7 @@ export function midnightInTimezone(year, month, day, tz) {
   const ry = resolved.getUTCFullYear()
   const rm = String(resolved.getUTCMonth() + 1).padStart(2, '0')
   const rd = String(resolved.getUTCDate()).padStart(2, '0')
-  return dayjs.tz(`${ry}-${rm}-${rd} 00:00:00`, tz).toDate()
+  return dayjs.tz(`${ry}-${rm}-${rd}T00:00:00`, tz).toDate()
 }
 
 /**
