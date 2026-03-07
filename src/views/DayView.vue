@@ -1,9 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import EventItem from '../components/EventItem.vue'
 import { useCalendar } from '../composables/useCalendar.js'
+import { useTimezone, midnightInTimezone, getTodayInTimezone } from '../composables/useTimezone.js'
 
 const { events, loading, error, fetchEvents, loadSources, enabledSources } = useCalendar()
+const { timezone } = useTimezone()
 
 const now = ref(new Date())
 
@@ -14,14 +16,17 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(timerId))
 
-const todayStart = computed(
-  () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate()),
+// Compute today/tomorrow/day-after-tomorrow boundaries in the configured timezone
+const todayParts = computed(() => getTodayInTimezone(timezone.value))
+
+const todayStart = computed(() =>
+  midnightInTimezone(todayParts.value.year, todayParts.value.month, todayParts.value.day, timezone.value),
 )
-const tomorrowStart = computed(
-  () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate() + 1),
+const tomorrowStart = computed(() =>
+  midnightInTimezone(todayParts.value.year, todayParts.value.month, todayParts.value.day + 1, timezone.value),
 )
-const dayAfterTomorrowStart = computed(
-  () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate() + 2),
+const dayAfterTomorrowStart = computed(() =>
+  midnightInTimezone(todayParts.value.year, todayParts.value.month, todayParts.value.day + 2, timezone.value),
 )
 
 // Half-open intervals matching CalendarGrid's overlap logic
@@ -29,13 +34,19 @@ const todayEnd = computed(() => tomorrowStart.value)
 const tomorrowEnd = computed(() => dayAfterTomorrowStart.value)
 
 const todayLabel = computed(() =>
-  now.value.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' }),
+  now.value.toLocaleDateString('default', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    timeZone: timezone.value,
+  }),
 )
 const tomorrowLabel = computed(() =>
   tomorrowStart.value.toLocaleDateString('default', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
+    timeZone: timezone.value,
   }),
 )
 
@@ -58,6 +69,9 @@ onMounted(() => {
   loadSources()
   loadEvents()
 })
+
+// Re-fetch when the configured timezone changes because the day boundaries shift
+watch(timezone, () => { loadEvents() })
 </script>
 
 <template>

@@ -1,13 +1,55 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { getAllPlugins } from '../plugins/index.js'
 import PluginCard from '../components/PluginCard.vue'
 import { useCalendar } from '../composables/useCalendar.js'
+import { useTimezone } from '../composables/useTimezone.js'
 
 const plugins = getAllPlugins()
 const { sources, addSource, removeSource, toggleSource, loadSources } = useCalendar()
+const { timezone, setTimezone } = useTimezone()
 
 onMounted(loadSources)
+
+// Build a list of available timezones, falling back to a set of common ones
+let availableTimezones
+try {
+  availableTimezones = Intl.supportedValuesOf('timeZone')
+} catch {
+  availableTimezones = [
+    'UTC',
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Anchorage',
+    'America/Honolulu',
+    'America/Toronto',
+    'America/Vancouver',
+    'America/Sao_Paulo',
+    'America/Argentina/Buenos_Aires',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'Europe/Moscow',
+    'Africa/Cairo',
+    'Africa/Johannesburg',
+    'Asia/Dubai',
+    'Asia/Kolkata',
+    'Asia/Bangkok',
+    'Asia/Shanghai',
+    'Asia/Tokyo',
+    'Asia/Seoul',
+    'Australia/Sydney',
+    'Pacific/Auckland',
+  ]
+}
+
+const selectedTimezone = ref(timezone.value)
+
+function applyTimezone() {
+  setTimezone(selectedTimezone.value)
+}
 </script>
 
 <template>
@@ -31,6 +73,30 @@ onMounted(loadSources)
           @add="addSource"
         />
       </div>
+    </section>
+
+    <section class="config-card">
+      <h2 class="section-title">Timezone</h2>
+      <p class="section-desc">
+        Choose the timezone used to display event times. Defaults to your browser's detected
+        timezone.
+      </p>
+      <div class="timezone-row">
+        <select
+          id="timezone-select"
+          v-model="selectedTimezone"
+          class="timezone-select"
+          aria-label="Select timezone"
+        >
+          <option v-for="tz in availableTimezones" :key="tz" :value="tz">{{ tz }}</option>
+        </select>
+        <button class="apply-btn" @click="applyTimezone" :disabled="selectedTimezone === timezone">
+          Apply
+        </button>
+      </div>
+      <p class="timezone-current">
+        Currently using: <strong>{{ timezone }}</strong>
+      </p>
     </section>
 
     <section class="config-card">
@@ -252,6 +318,57 @@ onMounted(loadSources)
 .danger-btn:hover {
   background: #fecaca;
   border-color: #fca5a5;
+}
+
+.timezone-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.timezone-select {
+  flex: 1;
+  padding: 0.375rem 0.625rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: #1e293b;
+  background: #fff;
+  cursor: pointer;
+}
+
+.timezone-select:focus {
+  outline: none;
+  border-color: #94a3b8;
+}
+
+.apply-btn {
+  padding: 0.375rem 0.875rem;
+  border-radius: 6px;
+  border: 1.5px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.apply-btn:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.apply-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.timezone-current {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 0;
 }
 </style>
 
