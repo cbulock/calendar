@@ -248,6 +248,52 @@ END:VCALENDAR`
     expect(events[0].start.toISOString()).toBe('2025-03-15T10:00:00.000Z')
   })
 
+  it('converts a Windows timezone name (Outlook) to the correct UTC instant', () => {
+    // Outlook ICS files use Windows timezone names like "Eastern Standard Time"
+    // instead of IANA names like "America/New_York".
+    // January observes EST (UTC-5, no DST), so 10:00 local → 15:00 UTC.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-tz@test
+SUMMARY:Outlook Event
+DTSTART;TZID=Eastern Standard Time:20250115T100000
+DTEND;TZID=Eastern Standard Time:20250115T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].start.toISOString()).toBe('2025-01-15T15:00:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2025-01-15T16:00:00.000Z')
+  })
+
+  it('does not mark Outlook Windows-timezone events as floating', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-tz-nofloat@test
+SUMMARY:Outlook Event
+DTSTART;TZID=Eastern Standard Time:20250115T100000
+DTEND;TZID=Eastern Standard Time:20250115T110000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].floating).toBeFalsy()
+  })
+
+  it('converts other common Windows timezone names correctly', () => {
+    // Pacific Standard Time: January observes PST (UTC-8), 15:00 local → 23:00 UTC
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-pacific@test
+SUMMARY:Pacific Event
+DTSTART;TZID=Pacific Standard Time:20250115T150000
+DTEND;TZID=Pacific Standard Time:20250115T160000
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].start.toISOString()).toBe('2025-01-15T23:00:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2025-01-16T00:00:00.000Z')
+    expect(events[0].floating).toBeFalsy()
+  })
+
   it('stores floating-time wall-clock hours/minutes in UTC', () => {
     // A floating "10:00" event must be stored with T10:00:00Z so that the client
     // can display it at "10:00" regardless of the user's UTC offset.
