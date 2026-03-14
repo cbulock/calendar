@@ -342,4 +342,8 @@ function isToday(cellYear, cellMonth, cellDay) {
   border: 1px dashed #222;
   font-style: italic;
 }
+
+.event-chip--tentative:hover {
+  background: #e8e8e8;
+}
 </style>
