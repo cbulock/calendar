@@ -39,8 +39,8 @@ vi.mock('../composables/useTimezone.js', async (importOriginal) => {
 // Stub EventItem so we don't need to render its internals
 const EventItemStub = defineComponent({
   name: 'EventItem',
-  props: ['event'],
-  template: '<div class="event-item-stub">{{ event.title }}</div>',
+  props: ['event', 'past'],
+  template: '<div class="event-item-stub" :data-past="past">{{ event.title }}</div>',
 })
 
 // Import AFTER mocks are set up
@@ -230,6 +230,87 @@ describe('DayView', () => {
       const wrapper = mountDayView()
       const todaySection = wrapper.find('.day-section--today')
       expect(todaySection.text()).not.toContain('Floating Tomorrow Only')
+    })
+  })
+
+  describe('now indicator', () => {
+    const FIXED_TIME = new Date('2025-06-18T15:00:00Z') // 3:00 PM UTC
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(FIXED_TIME)
+    })
+
+    it('shows the now indicator in the today section when there are no events', () => {
+      mockEvents.value = []
+      const wrapper = mountDayView()
+      const todaySection = wrapper.find('.day-section--today')
+      expect(todaySection.find('.now-indicator').exists()).toBe(true)
+    })
+
+    it('now indicator aria-label includes the formatted time', () => {
+      mockEvents.value = []
+      const wrapper = mountDayView()
+      const indicator = wrapper.find('.now-indicator')
+      const label = indicator.attributes('aria-label') ?? ''
+      // Should start with "Now •" and contain a time component
+      expect(label).toMatch(/^Now •/)
+      expect(label.length).toBeGreaterThan('Now •'.length)
+    })
+
+    it('shows the now indicator in the today section when events exist', () => {
+      const todayNoon = new Date('2025-06-18T12:00:00Z')
+      mockEvents.value = [makeEvent('e1', 'Past Meeting', todayNoon)]
+      const wrapper = mountDayView()
+      const todaySection = wrapper.find('.day-section--today')
+      expect(todaySection.find('.now-indicator').exists()).toBe(true)
+    })
+
+    it('does not show the now indicator in the tomorrow section', () => {
+      const wrapper = mountDayView()
+      const tomorrowSection = wrapper.find('.day-section--tomorrow')
+      expect(tomorrowSection.find('.now-indicator').exists()).toBe(false)
+    })
+
+    it('marks past events with past=true', () => {
+      // Event ended at 10 AM UTC, current time is 3 PM UTC — should be past
+      const pastStart = new Date('2025-06-18T09:00:00Z')
+      const pastEnd = new Date('2025-06-18T10:00:00Z')
+      mockEvents.value = [makeEvent('e1', 'Past Meeting', pastStart, pastEnd)]
+      const wrapper = mountDayView()
+      const stub = wrapper.find('.event-item-stub')
+      expect(stub.attributes('data-past')).toBe('true')
+    })
+
+    it('marks upcoming events with past=false', () => {
+      // Event starts at 5 PM UTC, current time is 3 PM UTC — should not be past
+      const futureStart = new Date('2025-06-18T17:00:00Z')
+      const futureEnd = new Date('2025-06-18T18:00:00Z')
+      mockEvents.value = [makeEvent('e1', 'Future Meeting', futureStart, futureEnd)]
+      const wrapper = mountDayView()
+      const stub = wrapper.find('.event-item-stub')
+      expect(stub.attributes('data-past')).toBe('false')
+    })
+
+    it('places now indicator after past events and before future events', () => {
+      // Past event (ended at 10 AM), future event (starts at 5 PM), current time 3 PM
+      const pastStart = new Date('2025-06-18T09:00:00Z')
+      const pastEnd = new Date('2025-06-18T10:00:00Z')
+      const futureStart = new Date('2025-06-18T17:00:00Z')
+      const futureEnd = new Date('2025-06-18T18:00:00Z')
+      mockEvents.value = [
+        makeEvent('e2', 'Future Meeting', futureStart, futureEnd),
+        makeEvent('e1', 'Past Meeting', pastStart, pastEnd),
+      ]
+      const wrapper = mountDayView()
+      const todaySection = wrapper.find('.day-section--today')
+      const html = todaySection.html()
+      // Past event should appear before the now indicator, future event after
+      const pastIdx = html.indexOf('Past Meeting')
+      const nowIdx = html.indexOf('now-indicator')
+      const futureIdx = html.indexOf('Future Meeting')
+      expect(pastIdx).toBeLessThan(nowIdx)
+      expect(nowIdx).toBeLessThan(futureIdx)
     })
   })
 })

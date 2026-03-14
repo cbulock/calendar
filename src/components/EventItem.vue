@@ -6,6 +6,10 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  past: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['select'])
@@ -43,7 +47,10 @@ function formatDuration(start, end) {
 <template>
   <div
     class="event-item"
-    :class="{ 'event-item--tentative': event.status === 'TENTATIVE' }"
+    :class="{
+      'event-item--tentative': event.status === 'TENTATIVE',
+      'event-item--past': past,
+    }"
     role="button"
     tabindex="0"
     @click="emit('select', event)"
@@ -100,5 +107,9 @@ function formatDuration(start, end) {
 
 .event-item--tentative .event-item__title {
   font-style: italic;
+}
+
+.event-item--past {
+  opacity: 0.45;
 }
 </style>

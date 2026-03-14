@@ -26,7 +26,6 @@ const todayParts = computed(() => {
   void now.value
   return getTodayInTimezone(timezone.value)
 })
-
 const todayStart = computed(() =>
   midnightInTimezone(todayParts.value.year, todayParts.value.month, todayParts.value.day, timezone.value),
 )
@@ -93,6 +92,67 @@ const tomorrowEvents = computed(() =>
   eventsForDay(tomorrowStart.value, tomorrowEnd.value, tomorrowUTCStart.value, dayAfterTomorrowUTCStart.value),
 )
 
+// For floating-time events the current wall-clock time in the configured
+// timezone, encoded as a UTC timestamp so it can be compared directly with
+// floating event times (which are stored as UTC wall-clock values).
+const nowWallClockMs = computed(() => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone.value,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(now.value).reduce((acc, { type, value }) => {
+    if (type !== 'literal') acc[type] = Number(value)
+    return acc
+  }, { year: 0, month: 1, day: 1, hour: 0, minute: 0, second: 0 })
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+})
+
+// Formatted current time label for the now indicator
+const nowTimeLabel = computed(() =>
+  now.value.toLocaleTimeString('default', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone.value,
+  }),
+)
+
+// Today's events sorted by start time (all-day events first, then by start)
+const sortedTodayEvents = computed(() =>
+  [...todayEvents.value].sort((a, b) => {
+    if (a.allDay && !b.allDay) return -1
+    if (!a.allDay && b.allDay) return 1
+    return new Date(a.start) - new Date(b.start)
+  }),
+)
+
+// Index in sortedTodayEvents where the now indicator should be inserted.
+// Events before this index have already started; events at/after are upcoming.
+const nowLineIndex = computed(() => {
+  const nowMs = now.value.getTime()
+  const nowWCMs = nowWallClockMs.value
+  const idx = sortedTodayEvents.value.findIndex((e) => {
+    const startMs = new Date(e.start).getTime()
+    return e.floating ? startMs > nowWCMs : startMs > nowMs
+  })
+  return idx === -1 ? sortedTodayEvents.value.length : idx
+})
+
+// Returns true when an event has completely ended before now.
+// Events without an explicit end time are treated as zero-duration (start === end)
+// and are considered past once their start time has passed.
+function isPastEvent(event) {
+  const evtEnd = event.end ? new Date(event.end) : new Date(event.start)
+  if (event.floating) {
+    return evtEnd.getTime() < nowWallClockMs.value
+  }
+  return evtEnd.getTime() < now.value.getTime()
+}
+
 async function loadEvents() {
   // Fetch events covering both timezone-aware and UTC day boundaries so that
   // floating-time events (which are filtered by UTC day) are included even
@@ -140,10 +200,23 @@ function sourceLabelFor(sourceId) {
 
     <section class="day-section day-section--today">
       <h2 class="day-section__heading">{{ todayLabel }}</h2>
-      <p v-if="todayEvents.length === 0" class="day-section__empty">No events today.</p>
+      <template v-if="sortedTodayEvents.length === 0">
+        <div class="now-indicator" :aria-label="`Now • ${nowTimeLabel}`">
+          <span class="now-indicator__time" aria-hidden="true">Now • {{ nowTimeLabel }}</span>
+        </div>
+        <p class="day-section__empty">No events today.</p>
+      </template>
       <ul v-else class="day-section__list">
-        <li v-for="event in todayEvents" :key="event.id">
-          <EventItem :event="event" @select="openEvent" />
+        <template v-for="(event, idx) in sortedTodayEvents" :key="event.id">
+          <li v-if="idx === nowLineIndex" class="now-indicator" :aria-label="`Now • ${nowTimeLabel}`">
+            <span class="now-indicator__time" aria-hidden="true">Now • {{ nowTimeLabel }}</span>
+          </li>
+          <li>
+            <EventItem :event="event" :past="isPastEvent(event)" @select="openEvent" />
+          </li>
+        </template>
+        <li v-if="nowLineIndex >= sortedTodayEvents.length" class="now-indicator" :aria-label="`Now • ${nowTimeLabel}`">
+          <span class="now-indicator__time" aria-hidden="true">Now • {{ nowTimeLabel }}</span>
         </li>
       </ul>
     </section>
@@ -232,5 +305,28 @@ function sourceLabelFor(sourceId) {
 
 .day-section--tomorrow .day-section__list {
   opacity: 0.65;
+}
+
+.now-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.1rem 0;
+  color: #888;
+  font-size: 0.72rem;
+  font-weight: bold;
+  list-style: none;
+}
+
+.now-indicator::before,
+.now-indicator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #bbb;
+}
+
+.now-indicator__time {
+  white-space: nowrap;
 }
 </style>
