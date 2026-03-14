@@ -499,7 +499,7 @@ export function parseICSData(icsText, sourceId) {
           allDay: Boolean(allDay),
           description: current.description || '',
           location: current.location || '',
-          status: current.status || (current.tentativeAttendee ? 'TENTATIVE' : ''),
+          status: current.status || (current.hasTentativeOrNeedsActionAttendee ? 'TENTATIVE' : ''),
           source: sourceId,
         }
         if (floating) event.floating = true
@@ -586,11 +586,11 @@ export function parseICSData(icsText, sourceId) {
           // tentative styling, so we clear any previously inferred flag.
           if (current.attendeeCount === 1) {
             if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
-              current.tentativeAttendee = true
+              current.hasTentativeOrNeedsActionAttendee = true
             }
-          } else if (current.attendeeCount > 1 && current.tentativeAttendee) {
+          } else if (current.attendeeCount > 1 && current.hasTentativeOrNeedsActionAttendee) {
             // More than one attendee present: disable the single-attendee fallback.
-            delete current.tentativeAttendee
+            delete current.hasTentativeOrNeedsActionAttendee
           }
           break
         }

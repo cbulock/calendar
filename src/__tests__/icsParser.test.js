@@ -206,6 +206,21 @@ END:VCALENDAR`
     expect(events[0].status).toBe('')
   })
 
+  it('does not set tentative from PARTSTAT when there are multiple ATTENDEE lines (avoids false positives in multi-attendee meetings)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:multi-attendee@test
+SUMMARY:Team Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:you@example.com
+ATTENDEE;PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT:mailto:other@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('')
+  })
+
   it('handles events with \\n in descriptions', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
