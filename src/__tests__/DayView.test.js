@@ -245,7 +245,17 @@ describe('DayView', () => {
       mockEvents.value = []
       const wrapper = mountDayView()
       const todaySection = wrapper.find('.day-section--today')
-      expect(todaySection.find('[aria-label="Current time"]').exists()).toBe(true)
+      expect(todaySection.find('.now-indicator').exists()).toBe(true)
+    })
+
+    it('now indicator aria-label includes the formatted time', () => {
+      mockEvents.value = []
+      const wrapper = mountDayView()
+      const indicator = wrapper.find('.now-indicator')
+      const label = indicator.attributes('aria-label') ?? ''
+      // Should start with "Now •" and contain a time component
+      expect(label).toMatch(/^Now •/)
+      expect(label.length).toBeGreaterThan('Now •'.length)
     })
 
     it('shows the now indicator in the today section when events exist', () => {
@@ -253,13 +263,13 @@ describe('DayView', () => {
       mockEvents.value = [makeEvent('e1', 'Past Meeting', todayNoon)]
       const wrapper = mountDayView()
       const todaySection = wrapper.find('.day-section--today')
-      expect(todaySection.find('[aria-label="Current time"]').exists()).toBe(true)
+      expect(todaySection.find('.now-indicator').exists()).toBe(true)
     })
 
     it('does not show the now indicator in the tomorrow section', () => {
       const wrapper = mountDayView()
       const tomorrowSection = wrapper.find('.day-section--tomorrow')
-      expect(tomorrowSection.find('[aria-label="Current time"]').exists()).toBe(false)
+      expect(tomorrowSection.find('.now-indicator').exists()).toBe(false)
     })
 
     it('marks past events with past=true', () => {
@@ -297,7 +307,7 @@ describe('DayView', () => {
       const html = todaySection.html()
       // Past event should appear before the now indicator, future event after
       const pastIdx = html.indexOf('Past Meeting')
-      const nowIdx = html.indexOf('aria-label="Current time"')
+      const nowIdx = html.indexOf('now-indicator')
       const futureIdx = html.indexOf('Future Meeting')
       expect(pastIdx).toBeLessThan(nowIdx)
       expect(nowIdx).toBeLessThan(futureIdx)

@@ -201,22 +201,22 @@ function sourceLabelFor(sourceId) {
     <section class="day-section day-section--today">
       <h2 class="day-section__heading">{{ todayLabel }}</h2>
       <template v-if="sortedTodayEvents.length === 0">
-        <div class="now-indicator" aria-label="Current time">
-          <span class="now-indicator__time">Now • {{ nowTimeLabel }}</span>
+        <div class="now-indicator" :aria-label="`Now • ${nowTimeLabel}`">
+          <span class="now-indicator__time" aria-hidden="true">Now • {{ nowTimeLabel }}</span>
         </div>
         <p class="day-section__empty">No events today.</p>
       </template>
       <ul v-else class="day-section__list">
         <template v-for="(event, idx) in sortedTodayEvents" :key="event.id">
-          <li v-if="idx === nowLineIndex" class="now-indicator" role="separator" aria-label="Current time">
-            <span class="now-indicator__time">Now • {{ nowTimeLabel }}</span>
+          <li v-if="idx === nowLineIndex" class="now-indicator" :aria-label="`Now • ${nowTimeLabel}`">
+            <span class="now-indicator__time" aria-hidden="true">Now • {{ nowTimeLabel }}</span>
           </li>
           <li>
             <EventItem :event="event" :past="isPastEvent(event)" @select="openEvent" />
           </li>
         </template>
-        <li v-if="nowLineIndex >= sortedTodayEvents.length" class="now-indicator" role="separator" aria-label="Current time">
-          <span class="now-indicator__time">Now • {{ nowTimeLabel }}</span>
+        <li v-if="nowLineIndex >= sortedTodayEvents.length" class="now-indicator" :aria-label="`Now • ${nowTimeLabel}`">
+          <span class="now-indicator__time" aria-hidden="true">Now • {{ nowTimeLabel }}</span>
         </li>
       </ul>
     </section>
