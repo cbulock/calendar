@@ -1,10 +1,14 @@
 /**
- * Minimal ICS (iCalendar) parser.
+ * ICS (iCalendar) parser backed by ical.js.
  *
- * Parses VEVENT blocks from an ICS string and returns an array of event objects.
- * Only handles the properties needed for calendar display.
+ * Uses ical.js (Mozilla's RFC 5545 implementation) for robust structural
+ * parsing of VEVENT blocks, then converts timestamps to JavaScript Date objects
+ * using dayjs (with the timezone plugin) so that Outlook/Exchange Windows
+ * timezone names, floating-time events, and all-day events are all handled
+ * correctly.
  */
 
+import ICAL from 'ical.js'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import customParseFormat from 'dayjs/plugin/customParseFormat.js'
@@ -27,23 +31,6 @@ function hashString(str) {
     h = h >>> 0 // keep as unsigned 32-bit
   }
   return h.toString(16)
-}
-
-/**
- * Extract the TZID parameter value from an ICS property line's parameter segment.
- * Preserves the original casing of the TZID value (IANA timezone names are case-sensitive).
- * Also strips optional surrounding quotes from the value.
- * e.g. the original line segment "DTSTART;TZID=America/New_York" → "America/New_York"
- * @param {string} rawParamSegment - The raw (un-lowercased) text before the colon, e.g. "DTSTART;TZID=America/New_York"
- * @returns {string|null}
- */
-function extractTZID(rawParamSegment) {
-  for (const param of rawParamSegment.split(';').slice(1)) {
-    if (param.toLowerCase().startsWith('tzid=')) {
-      return param.slice(5).replace(/^"|"$/g, '')
-    }
-  }
-  return null
 }
 
 /**
@@ -206,8 +193,36 @@ function resolveTimezone(tzid) {
 }
 
 /**
+ * Pre-process raw ICS text before handing it to ical.js:
+ *  1. Replace Windows timezone names (used by Outlook/Exchange) with IANA
+ *     equivalents in TZID= parameters so ical.js can parse them.
+ *  2. Add a VALUE=DATE parameter to bare DATE-only DTSTART / DTEND / EXDATE
+ *     lines that omit it (many producers write DTSTART:20250315 instead of
+ *     DTSTART;VALUE=DATE:20250315); ical.js 2.x requires VALUE=DATE to
+ *     recognise all-day events correctly.
+ * @param {string} icsText
+ * @returns {string}
+ */
+function preprocessICS(icsText) {
+  // 1. Windows TZ → IANA in TZID= parameters
+  let text = icsText.replace(/TZID=([^:;\r\n]+)/g, (match, tzid) => {
+    const iana = WINDOWS_TO_IANA[tzid.trim()]
+    return iana ? `TZID=${iana}` : match
+  })
+  // 2. Add VALUE=DATE for bare 8-digit date values (no time component)
+  text = text.replace(/^(DTSTART|DTEND|EXDATE)([^:]*):(\d{8})\r?$/gm, (match, prop, params, date) => {
+    if (params.includes('VALUE=DATE')) return match
+    const cr = match.endsWith('\r') ? '\r' : ''
+    return params
+      ? `${prop}${params};VALUE=DATE:${date}${cr}`
+      : `${prop};VALUE=DATE:${date}${cr}`
+  })
+  return text
+}
+
+/**
  * Returns true if the given timezone identifier is recognised by day.js
- * (i.e., would NOT fall through to floating-time treatment in parseICSDate).
+ * (i.e., would NOT fall through to floating-time treatment).
  * Accepts both IANA timezone identifiers and Windows timezone names (used by Outlook).
  * @param {string} tzid
  * @returns {boolean}
@@ -226,57 +241,48 @@ function isSupportedTZID(tzid) {
 }
 
 /**
- * Parse an ICS date string into a JavaScript Date.
- * Handles DATE-only (YYYYMMDD) and DATETIME (YYYYMMDDTHHmmssZ) formats.
- * When a TZID is provided, the local datetime is properly converted to UTC
- * using day.js timezone support.
- * @param {string} value - Raw ICS date value (after the colon)
- * @param {string|null} tzid - IANA timezone extracted from property parameters
- * @returns {Date}
+ * Convert an ical.js ICAL.Time value to a JavaScript Date.
+ * Uses the raw integer fields from ICAL.Time plus dayjs for timezone
+ * conversion, so ical.js does not need its own timezone database.
+ *
+ * @param {ICAL.Time} icalTime   - Parsed time value from an ical.js property
+ * @param {string|null} tzidParam - TZID extracted from the parent property's parameters
+ * @returns {Date|null}
  */
-function parseICSDate(value, tzid) {
-  if (!value) return null
-  // Strip VALUE=DATE: or TZID=... prefixes that may be embedded in the value
-  const clean = value.split(':').pop().trim()
-  if (clean.length === 8) {
-    // DATE only: YYYYMMDD — all-day, not timezone-sensitive for boundaries
-    return dayjs(clean, 'YYYYMMDD').toDate()
+function icalTimeToDate(icalTime, tzidParam) {
+  if (!icalTime) return null
+
+  const y  = icalTime.year
+  const mo = String(icalTime.month).padStart(2, '0') // ical.js months are 1-based; pad to 2 digits for the YYYYMMDD string
+  const d  = String(icalTime.day).padStart(2, '0')
+
+  if (icalTime.isDate) {
+    // DATE-only (all-day event) — no timezone conversion needed
+    return dayjs(`${y}${mo}${d}`, 'YYYYMMDD').toDate()
   }
-  // DATETIME: YYYYMMDDTHHmmss[Z]
-  if (clean.endsWith('Z')) {
-    // Explicit UTC — parse directly as UTC
-    return dayjs.utc(clean, 'YYYYMMDDTHHmmss[Z]').toDate()
-  }
-  if (tzid) {
-    // Local time in a named timezone — day.js converts to UTC internally.
-    // resolveTimezone() converts Windows timezone names (used by Outlook) to
-    // their IANA equivalents before passing to dayjs.tz().
+
+  const h   = String(icalTime.hour).padStart(2, '0')
+  const min = String(icalTime.minute).padStart(2, '0')
+  const s   = String(icalTime.second).padStart(2, '0')
+  const str = `${y}${mo}${d}T${h}${min}${s}`
+
+  if (tzidParam) {
+    // Local time in a named timezone — convert to UTC via dayjs.tz().
+    // resolveTimezone() maps Windows names that were not caught by preprocessICS().
+    const ianaName = resolveTimezone(tzidParam)
     try {
-      return dayjs.tz(clean, 'YYYYMMDDTHHmmss', resolveTimezone(tzid)).toDate()
+      return dayjs.tz(str, 'YYYYMMDDTHHmmss', ianaName).toDate()
     } catch {
-      // Unknown/unsupported TZID — fall through to floating-time treatment
+      // Unknown / unsupported TZID — fall back to floating-time treatment
+      return dayjs.utc(str, 'YYYYMMDDTHHmmss').toDate()
     }
   }
-  // Floating time (no timezone specified) — preserve the wall-clock time by
-  // storing it as a UTC instant with identical hour/minute values.  Using
-  // dayjs.utc() here (rather than the bare dayjs() constructor) avoids any
-  // influence from the server's local timezone so the result is the same
-  // regardless of where the server process is running.
-  return dayjs.utc(clean, 'YYYYMMDDTHHmmss').toDate()
-}
 
-/**
- * Unfold ICS content lines (lines continued with a leading space/tab).
- * @param {string} text - Raw ICS text
- * @returns {string[]} Array of logical lines
- */
-function unfoldLines(text) {
-  // Handle both CRLF (RFC 5545 standard) and LF-only line endings
-  return text
-    .replace(/\r\n[ \t]/g, '')
-    .replace(/\n[ \t]/g, '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
+  // No TZID parameter: either UTC (Z suffix, zone.tzid === 'UTC') or floating
+  // (no timezone at all).  In both cases the raw hour/minute values are stored
+  // as-is using dayjs.utc() so they are preserved regardless of the server's
+  // local timezone.
+  return dayjs.utc(str, 'YYYYMMDDTHHmmss').toDate()
 }
 
 /** Maps RFC 5545 2-letter weekday codes to JavaScript getDay() values (0=Sunday). */
@@ -313,10 +319,23 @@ function expandRRule(event, rangeStart, rangeEnd) {
   if (!p.FREQ) return [event]
 
   const interval = Math.max(1, parseInt(p.INTERVAL ?? '1', 10))
-  // Note: parseICSDate checks for a 'Z' suffix first, so UTC UNTIL values are
-  // always parsed as UTC regardless of startTzid. startTzid is only applied
-  // to floating-time (non-Z) UNTIL values per RFC 5545 § 3.3.10.
-  const until = p.UNTIL ? parseICSDate(p.UNTIL, event.startTzid) : null
+  // UNTIL can be a UTC instant (Z suffix), a DATE-only value, or a local time
+  // in the event's start timezone (RFC 5545 § 3.3.10).  Z-suffix values are
+  // always treated as UTC regardless of startTzid.
+  const until = (() => {
+    const u = p.UNTIL
+    if (!u) return null
+    if (u.endsWith('Z')) return dayjs.utc(u.slice(0, 15), 'YYYYMMDDTHHmmss').toDate()
+    if (u.length === 8) return dayjs(u, 'YYYYMMDD').toDate()
+    if (event.startTzid) {
+      try {
+        return dayjs.tz(u, 'YYYYMMDDTHHmmss', event.startTzid).toDate()
+      } catch {
+        // fall through to UTC wall-clock treatment
+      }
+    }
+    return dayjs.utc(u, 'YYYYMMDDTHHmmss').toDate()
+  })()
   const maxCount = p.COUNT ? parseInt(p.COUNT, 10) : null
 
   // Strip positional prefix (e.g. "1MO", "-1FR" → "MO", "FR") then map to JS day index.
@@ -453,149 +472,139 @@ export function expandEvents(events, rangeStart, rangeEnd) {
 
 /**
  * Parse ICS text into an array of calendar event objects.
- * @param {string} icsText - Raw ICS/iCalendar text
+ *
+ * Uses ical.js for robust RFC 5545 structural parsing (line unfolding, property
+ * parameter handling, TEXT-value unescaping, etc.) and dayjs for timezone-aware
+ * date conversion.
+ *
+ * @param {string} icsText  - Raw ICS/iCalendar text
  * @param {string} sourceId - Plugin ID to tag each event with
- * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?}>}
+ * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, startTzid?, floating?}>}
  */
 export function parseICSData(icsText, sourceId) {
-  const lines = unfoldLines(icsText)
-  const events = []
-  let current = null
+  const preprocessed = preprocessICS(icsText)
 
-  for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') {
-      current = {}
-      continue
-    }
-    if (line === 'END:VEVENT') {
-      // RFC 5545 defines three VEVENT statuses: TENTATIVE, CONFIRMED, CANCELLED.
-      // TENTATIVE and CONFIRMED events represent real calendar time and should be
-      // displayed. Only CANCELLED events are hidden.
-      if (current && current.status !== 'CANCELLED') {
-        const allDay = current.dtstart && current.dtstart.length === 8
-        const start = parseICSDate(current.dtstart, current.dtstart_tzid)
-        let end = parseICSDate(current.dtend, current.dtend_tzid)
-        // For all-day events with no DTEND, set end = start
-        if (!end) end = start
-        // A floating time has no TZID parameter and no explicit UTC 'Z' suffix.
-        // It also includes events whose TZID is unsupported/unknown (those fall
-        // through to the same UTC wall-clock storage path in parseICSDate).
-        // All-day events (DATE-only) are excluded — they are inherently date-only
-        // and do not have a wall-clock time component.
-        const floating =
-          !allDay &&
-          Boolean(current.dtstart) &&
-          !current.dtstart.endsWith('Z') &&
-          !isSupportedTZID(current.dtstart_tzid)
-        const event = {
-          id:
-            current.uid ||
-            `${sourceId}-${hashString(
-              [sourceId, current.dtstart, current.dtend, current.summary, current.location].join('|'),
-            )}`,
-          title: current.summary || '(No title)',
-          start,
-          end,
-          allDay: Boolean(allDay),
-          description: current.description || '',
-          location: current.location || '',
-          status: current.status || (current.hasTentativeOrNeedsActionAttendee ? 'TENTATIVE' : ''),
-          source: sourceId,
-        }
-        if (floating) event.floating = true
-        if (current.dtstart_tzid) event.startTzid = current.dtstart_tzid
-        if (current.rrule) event.rrule = current.rrule
-        if (current.exdates && current.exdates.length > 0) event.exdates = current.exdates
-        events.push(event)
-      }
-      current = null
-      continue
-    }
+  let jcal
+  try {
+    jcal = ICAL.parse(preprocessed)
+  } catch {
+    // Malformed ICS — return empty list rather than crashing
+    return []
+  }
 
-    if (current !== null) {
-      // Parse property name (may include parameters like DTSTART;TZID=...)
-      const colonIdx = line.indexOf(':')
-      if (colonIdx === -1) continue
-      const rawPropSegment = line.slice(0, colonIdx)
-      const propFull = rawPropSegment.toLowerCase()
-      const value = line.slice(colonIdx + 1)
-      // Strip parameters (e.g. DTSTART;TZID=America/New_York -> dtstart)
-      const prop = propFull.split(';')[0]
+  const comp    = new ICAL.Component(jcal)
+  const vevents = comp.getAllSubcomponents('vevent')
+  const events  = []
 
-      switch (prop) {
-        case 'uid':
-          current.uid = value
-          break
-        case 'summary':
-          current.summary = value
-          break
-        case 'dtstart':
-          // Keep full line value so we can detect DATE-only
-          current.dtstart = line.slice(colonIdx + 1)
-          current.dtstart_tzid = extractTZID(rawPropSegment)
-          break
-        case 'dtend':
-          current.dtend = line.slice(colonIdx + 1)
-          current.dtend_tzid = extractTZID(rawPropSegment)
-          break
-        case 'description':
-          current.description = value.replace(/\\n/g, '\n').replace(/\\,/g, ',')
-          break
-        case 'location':
-          current.location = value
-          break
-        case 'status':
-          current.status = value.toUpperCase()
-          break
-        case 'rrule':
-          current.rrule = value
-          break
-        case 'exdate': {
-          // EXDATE may contain multiple comma-separated datetime values
-          if (!current.exdates) current.exdates = []
-          const exdateTZID = extractTZID(rawPropSegment)
-          for (const dv of value.split(',')) {
-            const d = parseICSDate(dv.trim(), exdateTZID)
-            if (d) current.exdates.push(d)
-          }
-          break
-        }
-        case 'attendee': {
-          // Track how many ATTENDEE lines we've seen for this event so we can
-          // scope the tentative fallback to single-attendee events only.
-          if (current.attendeeCount == null) {
-            current.attendeeCount = 0
-          }
-          current.attendeeCount += 1
+  for (const vevent of vevents) {
+    // RFC 5545 defines three VEVENT statuses: TENTATIVE, CONFIRMED, CANCELLED.
+    // TENTATIVE and CONFIRMED events represent real calendar time and should be
+    // displayed.  Only CANCELLED events are hidden.
+    const rawStatus = (vevent.getFirstPropertyValue('status') || '').toUpperCase()
+    if (rawStatus === 'CANCELLED') continue
 
-          // Extract PARTSTAT to determine the attendee's participation status.
-          // Facebook "interested" events use PARTSTAT=TENTATIVE instead of STATUS:TENTATIVE.
-          // Outlook unanswered meeting invites may use PARTSTAT=NEEDS-ACTION.
-          // rawPropSegment is e.g. "ATTENDEE;PARTSTAT=TENTATIVE;CN=Name", so split on ';'
-          // and skip index 0 (the property name) to iterate over parameters only.
-          let partstat = null
-          for (const param of rawPropSegment.split(';').slice(1)) {
-            if (param.toLowerCase().startsWith('partstat=')) {
-              partstat = param.slice('partstat='.length).toUpperCase().replace(/^"|"$/g, '')
-              break
-            }
-          }
+    // DTSTART is required for a usable event
+    const dtStartProp = vevent.getFirstProperty('dtstart')
+    if (!dtStartProp) continue
 
-          // Only infer a tentative event from PARTSTAT when there is exactly one
-          // attendee. For multi-attendee events this heuristic causes false
-          // tentative styling, so we clear any previously inferred flag.
-          if (current.attendeeCount === 1) {
-            if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
-              current.hasTentativeOrNeedsActionAttendee = true
-            }
-          } else if (current.attendeeCount > 1 && current.hasTentativeOrNeedsActionAttendee) {
-            // More than one attendee present: disable the single-attendee fallback.
-            delete current.hasTentativeOrNeedsActionAttendee
-          }
-          break
+    const dtstart     = dtStartProp.getFirstValue()
+    const dtStartTzid = dtStartProp.getParameter('tzid') ?? null
+
+    const dtEndProp = vevent.getFirstProperty('dtend')
+    const dtend     = dtEndProp ? dtEndProp.getFirstValue() : null
+    // Fall back to the start timezone for DTEND if no separate TZID is present
+    const dtEndTzid = (dtEndProp?.getParameter('tzid')) ?? dtStartTzid
+
+    const allDay = dtstart.isDate
+
+    // A datetime is "floating" when it has no TZID parameter and no Z suffix
+    // (zone.tzid === 'UTC').  Events with an unsupported/unknown TZID also fall
+    // back to floating-time treatment so their wall-clock hour is preserved.
+    const isUTCZone = dtstart.zone?.tzid === 'UTC'
+    const floating  =
+      !allDay &&
+      (!dtStartTzid
+        ? !isUTCZone                       // no TZID → floating unless Z suffix
+        : !isSupportedTZID(dtStartTzid))   // unknown TZID → treated as floating
+
+    const start = icalTimeToDate(dtstart, dtStartTzid)
+    let   end   = dtend ? icalTimeToDate(dtend, dtEndTzid) : null
+    // For all-day events with no DTEND, use the same date as the start
+    if (!end) end = start
+
+    // ATTENDEE PARTSTAT → TENTATIVE fallback.
+    // Facebook "interested" events carry PARTSTAT=TENTATIVE on a single attendee
+    // instead of STATUS:TENTATIVE.  Outlook unanswered invites use NEEDS-ACTION.
+    // We only infer tentative from PARTSTAT for single-attendee events to avoid
+    // false positives in multi-attendee meetings.
+    let status = rawStatus
+    if (!status) {
+      const attendeeProps = vevent.getAllProperties('attendee')
+      if (attendeeProps.length === 1) {
+        const partstat = (attendeeProps[0].getParameter('partstat') || '').toUpperCase()
+        if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
+          status = 'TENTATIVE'
         }
       }
     }
+
+    const uid         = vevent.getFirstPropertyValue('uid')
+    const summary     = vevent.getFirstPropertyValue('summary')
+    const description = vevent.getFirstPropertyValue('description')
+    const location    = vevent.getFirstPropertyValue('location')
+
+    // Deterministic fallback ID for events that do not have a UID.
+    // Use the raw iCal string representations of DTSTART/DTEND so the hash
+    // value stays consistent with the format the previous custom parser stored.
+    const dtStartStr = dtstart.toICALString()
+    const dtEndStr   = dtend ? dtend.toICALString() : ''
+
+    const event = {
+      id:
+        uid ||
+        `${sourceId}-${hashString(
+          [sourceId, dtStartStr, dtEndStr, summary ?? '', location ?? ''].join('|'),
+        )}`,
+      title:       summary     || '(No title)',
+      start,
+      end,
+      allDay:      Boolean(allDay),
+      // ical.js automatically unescapes TEXT values (\n, \,, \\, etc.)
+      description: description || '',
+      location:    location    || '',
+      status,
+      source:      sourceId,
+    }
+
+    if (floating) event.floating = true
+
+    // Store the IANA-resolved TZID so expandRRule can apply it to floating UNTIL
+    // values (RFC 5545 § 3.3.10).  resolveTimezone() maps any remaining Windows
+    // timezone names to IANA; for already-IANA names it returns the input unchanged.
+    if (dtStartTzid) event.startTzid = resolveTimezone(dtStartTzid)
+
+    // Recurrence rule — stored as the RFC 5545 RRULE string (e.g. "FREQ=WEEKLY;BYDAY=MO")
+    // for the custom expandRRule / expandEvents functions.
+    const rruleProp = vevent.getFirstProperty('rrule')
+    if (rruleProp) event.rrule = rruleProp.getFirstValue().toString()
+
+    // Excluded dates (EXDATE may appear on multiple property lines or hold
+    // comma-separated values; ical.js surfaces them via getValues()).
+    const exdateProps = vevent.getAllProperties('exdate')
+    if (exdateProps.length > 0) {
+      const exdates = []
+      for (const exProp of exdateProps) {
+        // Fall back to the event's start TZID when EXDATE has no explicit TZID
+        const exTzid = exProp.getParameter('tzid') ?? dtStartTzid
+        for (const val of exProp.getValues()) {
+          const d = icalTimeToDate(val, exTzid)
+          if (d) exdates.push(d)
+        }
+      }
+      if (exdates.length > 0) event.exdates = exdates
+    }
+
+    events.push(event)
   }
 
   return events
