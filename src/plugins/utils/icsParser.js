@@ -499,7 +499,7 @@ export function parseICSData(icsText, sourceId) {
           allDay: Boolean(allDay),
           description: current.description || '',
           location: current.location || '',
-          status: current.status || '',
+          status: current.status || (current.hasTentativeOrNeedsActionAttendee ? 'TENTATIVE' : ''),
           source: sourceId,
         }
         if (floating) event.floating = true
@@ -557,6 +557,40 @@ export function parseICSData(icsText, sourceId) {
           for (const dv of value.split(',')) {
             const d = parseICSDate(dv.trim(), exdateTZID)
             if (d) current.exdates.push(d)
+          }
+          break
+        }
+        case 'attendee': {
+          // Track how many ATTENDEE lines we've seen for this event so we can
+          // scope the tentative fallback to single-attendee events only.
+          if (current.attendeeCount == null) {
+            current.attendeeCount = 0
+          }
+          current.attendeeCount += 1
+
+          // Extract PARTSTAT to determine the attendee's participation status.
+          // Facebook "interested" events use PARTSTAT=TENTATIVE instead of STATUS:TENTATIVE.
+          // Outlook unanswered meeting invites may use PARTSTAT=NEEDS-ACTION.
+          // rawPropSegment is e.g. "ATTENDEE;PARTSTAT=TENTATIVE;CN=Name", so split on ';'
+          // and skip index 0 (the property name) to iterate over parameters only.
+          let partstat = null
+          for (const param of rawPropSegment.split(';').slice(1)) {
+            if (param.toLowerCase().startsWith('partstat=')) {
+              partstat = param.slice('partstat='.length).toUpperCase().replace(/^"|"$/g, '')
+              break
+            }
+          }
+
+          // Only infer a tentative event from PARTSTAT when there is exactly one
+          // attendee. For multi-attendee events this heuristic causes false
+          // tentative styling, so we clear any previously inferred flag.
+          if (current.attendeeCount === 1) {
+            if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
+              current.hasTentativeOrNeedsActionAttendee = true
+            }
+          } else if (current.attendeeCount > 1 && current.hasTentativeOrNeedsActionAttendee) {
+            // More than one attendee present: disable the single-attendee fallback.
+            delete current.hasTentativeOrNeedsActionAttendee
           }
           break
         }

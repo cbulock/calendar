@@ -149,6 +149,78 @@ END:VCALENDAR`
     expect(events[0].status).toBe('CONFIRMED')
   })
 
+  it('sets status to TENTATIVE when ATTENDEE PARTSTAT is TENTATIVE and no STATUS is set (Facebook "interested")', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:fb-interested@test
+SUMMARY:Interested Event
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=TENTATIVE;CN=Test User:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('sets status to TENTATIVE when ATTENDEE PARTSTAT is NEEDS-ACTION and no STATUS is set (Outlook unanswered invite)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-unconfirmed@test
+SUMMARY:Unconfirmed Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('does not override explicit STATUS with ATTENDEE PARTSTAT', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:confirmed-with-attendee@test
+SUMMARY:Confirmed Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+ATTENDEE;PARTSTAT=TENTATIVE;CN=Other User:mailto:other@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('CONFIRMED')
+  })
+
+  it('does not set tentative for ATTENDEE PARTSTAT=ACCEPTED', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:fb-going@test
+SUMMARY:Going Event
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=ACCEPTED;CN=Test User:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('')
+  })
+
+  it('does not set tentative from PARTSTAT when there are multiple ATTENDEE lines (avoids false positives in multi-attendee meetings)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:multi-attendee@test
+SUMMARY:Team Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:you@example.com
+ATTENDEE;PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT:mailto:other@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('')
+  })
+
   it('handles events with \\n in descriptions', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
