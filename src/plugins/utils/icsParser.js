@@ -499,7 +499,7 @@ export function parseICSData(icsText, sourceId) {
           allDay: Boolean(allDay),
           description: current.description || '',
           location: current.location || '',
-          status: current.status || '',
+          status: current.status || (current.tentativeAttendee ? 'TENTATIVE' : ''),
           source: sourceId,
         }
         if (floating) event.floating = true
@@ -557,6 +557,23 @@ export function parseICSData(icsText, sourceId) {
           for (const dv of value.split(',')) {
             const d = parseICSDate(dv.trim(), exdateTZID)
             if (d) current.exdates.push(d)
+          }
+          break
+        }
+        case 'attendee': {
+          // Extract PARTSTAT to determine the attendee's participation status.
+          // Facebook "interested" events use PARTSTAT=TENTATIVE instead of STATUS:TENTATIVE.
+          // Outlook unanswered meeting invites may use PARTSTAT=NEEDS-ACTION.
+          // rawPropSegment is e.g. "ATTENDEE;PARTSTAT=TENTATIVE;CN=Name", so split on ';'
+          // and skip index 0 (the property name) to iterate over parameters only.
+          for (const param of rawPropSegment.split(';').slice(1)) {
+            if (param.toLowerCase().startsWith('partstat=')) {
+              const partstat = param.slice('partstat='.length).toUpperCase().replace(/^"|"$/g, '')
+              if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
+                current.tentativeAttendee = true
+              }
+              break
+            }
           }
           break
         }
