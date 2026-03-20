@@ -483,11 +483,11 @@ function expandRRule(event, rangeStart, rangeEnd) {
       // e.g. BYDAY=3FR → third Friday; BYDAY=-1MO → last Monday; BYDAY=MO → every Monday.
       // cursor is a dayjs UTC object (normalized to day 1 of the month above).
       const daysInMonth = cursor.daysInMonth()
-      const firstDow = cursor.date(1).day() // UTC weekday of the 1st of this month
+      const monthFirstDow = cursor.date(1).day() // UTC weekday of the 1st of this month
       candidates = byDayRules
         .flatMap(({ weekday, position }) => {
           // Find the day-of-month of the first occurrence of `weekday` in this month.
-          const firstOccDay = 1 + ((weekday - firstDow + 7) % 7)
+          const firstOccDay = 1 + ((weekday - monthFirstDow + 7) % 7)
           // Collect all occurrences of this weekday in the month.
           const allOccDays = []
           for (let day = firstOccDay; day <= daysInMonth; day += 7) {
