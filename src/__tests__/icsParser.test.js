@@ -813,6 +813,68 @@ describe('expandEvents', () => {
     result.forEach((e) => expect(e.start.getUTCDay()).toBe(5))
   })
 
+  it('adjusts FREQ=WEEKLY+BYDAY occurrence times across a DST boundary (Mountain Standard Time)', () => {
+    // Reproduces the bug report: event starts before US DST (March 8, 2026) at
+    // 12:30 Mountain Standard Time = 19:30 UTC.  After DST the wall-clock time
+    // should stay at 12:30 Mountain Daylight Time = 18:30 UTC, not 19:30 UTC.
+    const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:040000008200E00074C5B7101A82E00800000000E1DAB12BABA5DC01@test
+SUMMARY:Test
+DTSTART;TZID=Mountain Standard Time:20260305T123000
+DTEND;TZID=Mountain Standard Time:20260305T130000
+RRULE:FREQ=WEEKLY;UNTIL=20260402T183000Z;INTERVAL=1;BYDAY=TH;WKST=SU
+END:VEVENT
+END:VCALENDAR`
+    const parsed = parseICSData(ics, 'test')
+    const result = expandEvents(
+      parsed,
+      new Date('2026-03-01T00:00:00Z'),
+      new Date('2026-04-30T23:59:59Z'),
+    )
+    // 5 Thursdays: Mar 5, Mar 12, Mar 19, Mar 26, Apr 2
+    expect(result.length).toBe(5)
+    // Mar 5: before DST  → 12:30 MST (UTC-7) = 19:30 UTC
+    expect(result[0].start.toISOString()).toBe('2026-03-05T19:30:00.000Z')
+    // Mar 12 onward: after DST → 12:30 MDT (UTC-6) = 18:30 UTC, NOT 19:30 UTC
+    expect(result[1].start.toISOString()).toBe('2026-03-12T18:30:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2026-03-19T18:30:00.000Z')
+    expect(result[3].start.toISOString()).toBe('2026-03-26T18:30:00.000Z')
+    // Apr 2: UNTIL=20260402T183000Z — occurrence at 18:30 UTC exactly hits the limit, included
+    expect(result[4].start.toISOString()).toBe('2026-04-02T18:30:00.000Z')
+  })
+
+  it('adjusts FREQ=WEEKLY (no BYDAY) occurrence times across a DST boundary', () => {
+    // Same scenario but without BYDAY — uses the simple cursor path
+    const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:weekly-no-byday-dst@test
+SUMMARY:Test
+DTSTART;TZID=America/New_York:20260305T143000
+DTEND;TZID=America/New_York:20260305T150000
+RRULE:FREQ=WEEKLY;COUNT=4
+END:VEVENT
+END:VCALENDAR`
+    const parsed = parseICSData(ics, 'test')
+    const result = expandEvents(
+      parsed,
+      new Date('2026-03-01T00:00:00Z'),
+      new Date('2026-04-30T23:59:59Z'),
+    )
+    // 4 Thursdays starting Mar 5: Mar 5, Mar 12, Mar 19, Mar 26
+    expect(result.length).toBe(4)
+    // Mar 5: before DST → 14:30 EST (UTC-5) = 19:30 UTC
+    expect(result[0].start.toISOString()).toBe('2026-03-05T19:30:00.000Z')
+    // Mar 12+: after DST → 14:30 EDT (UTC-4) = 18:30 UTC
+    expect(result[1].start.toISOString()).toBe('2026-03-12T18:30:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2026-03-19T18:30:00.000Z')
+    expect(result[3].start.toISOString()).toBe('2026-03-26T18:30:00.000Z')
+  })
+
   it('reproduces the bug report: FREQ=MONTHLY;BYDAY=3FR shows on correct day', () => {
     // From issue: DTSTART;TZID=Central Standard Time:20250321T133000
     // Central Standard Time = America/Chicago; March 21 observes CDT (UTC-5) → 18:30Z

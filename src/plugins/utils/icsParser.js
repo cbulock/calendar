@@ -6,6 +6,19 @@
  * using dayjs (with the timezone plugin) so that Outlook/Exchange Windows
  * timezone names, floating-time events, and all-day events are all handled
  * correctly.
+ *
+ * ## DateTime convention
+ * ALL date/time arithmetic in this file MUST use dayjs (or dayjs.tz() for
+ * timezone-aware work).  Never use raw JavaScript Date arithmetic (setDate,
+ * setHours, fixed-ms offsets, etc.) for anything timezone-sensitive, because
+ * plain Date operations are unaware of DST transitions and will produce
+ * incorrect results when a recurring event's occurrences span a DST boundary.
+ *
+ * Correct pattern:
+ *   dayjs.tz('2026-03-12T12:30:00', 'America/Denver').toDate()  // DST-aware
+ *
+ * Incorrect pattern:
+ *   new Date(someDate.getTime() + 7 * 24 * 60 * 60 * 1000)     // DST-blind
  */
 
 import ICAL from 'ical.js'
@@ -361,81 +374,123 @@ function expandRRule(event, rangeStart, rangeEnd) {
   // Plain weekday array used by the WEEKLY branch (positional info not needed there).
   const byDay = byDayRules ? byDayRules.map((b) => b.weekday) : null
 
-  const duration = event.end.getTime() - event.start.getTime()
+  const duration = dayjs(event.end).diff(dayjs(event.start))
+
+  // For timezone-aware recurring events, extract the wall-clock time (hour,
+  // minute, second) of the series start in the source timezone.  This lets
+  // each occurrence be converted to UTC via dayjs.tz() so that DST transitions
+  // are handled correctly — e.g. an event at 12:30 "Mountain Standard Time"
+  // stays at 12:30 MDT (not 12:30 MST) after the clocks spring forward.
+  // Without this, all occurrences would share the fixed UTC offset of DTSTART,
+  // showing an hour late (or early) after a DST change.
+  let localWallClock = null
+  if (event.startTzid && !event.floating) {
+    const s = dayjs(event.start).tz(event.startTzid)
+    localWallClock = { hour: s.hour(), minute: s.minute(), second: s.second(), tz: event.startTzid }
+  }
+
+  /**
+   * Given a dayjs UTC object whose year/month/day represent the intended occurrence
+   * date, return a JS Date at the correct UTC instant by applying the series
+   * wall-clock time in the source timezone.  For floating/UTC events (no timezone
+   * info), converts the dayjs object to a plain Date unchanged.
+   * @param {import('dayjs').Dayjs} d - A dayjs UTC object for the occurrence date
+   * @returns {Date}
+   */
+  const adjustForDST = (d) => {
+    if (!localWallClock) return d.toDate()
+    const y   = d.year()
+    const mo  = String(d.month() + 1).padStart(2, '0')
+    const day = String(d.date()).padStart(2, '0')
+    const hh  = String(localWallClock.hour).padStart(2, '0')
+    const mm  = String(localWallClock.minute).padStart(2, '0')
+    const ss  = String(localWallClock.second).padStart(2, '0')
+    try {
+      return dayjs.tz(`${y}-${mo}-${day}T${hh}:${mm}:${ss}`, 'YYYY-MM-DDTHH:mm:ss', localWallClock.tz).toDate()
+    } catch {
+      return d.toDate()
+    }
+  }
 
   // Build a set of excluded occurrence start times (epoch ms) for fast lookup
-  const exdateSet = new Set((event.exdates ?? []).map((d) => d.getTime()))
+  const exdateSet = new Set((event.exdates ?? []).map((d) => dayjs(d).valueOf()))
 
   const results = []
-  let cursor = new Date(event.start)
+  let cursor = dayjs.utc(event.start)
   let count = 0
 
   // For MONTHLY+BYDAY, normalize cursor to the 1st of the event's start month.
-  // This ensures the outer-loop termination checks (cursor > until, cursor > rangeEnd)
-  // never fire before candidates for that month have been generated — a BYDAY candidate
-  // (e.g. the 3rd Friday on the 18th) can be earlier in the month than the original
-  // DTSTART day-of-month (e.g. the 21st).
+  // This ensures the outer-loop termination checks never fire before candidates
+  // for that month have been generated — a BYDAY candidate (e.g. the 3rd Friday
+  // on the 18th) can be earlier in the month than the original DTSTART
+  // day-of-month (e.g. the 21st).
   if (p.FREQ === 'MONTHLY' && byDayRules && byDayRules.length > 0) {
-    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1))
+    cursor = cursor.date(1)
   }
 
   // Fast-forward cursor for simple (non-BYDAY) daily/weekly rules to avoid
   // iterating through years of history one step at a time.
   if (p.FREQ === 'DAILY' || (p.FREQ === 'WEEKLY' && !byDay)) {
-    const periodMs = (p.FREQ === 'DAILY' ? 1 : 7) * interval * 24 * 60 * 60 * 1000
-    const targetMs = rangeStart.getTime() - duration
-    if (cursor.getTime() < targetMs && periodMs > 0) {
-      const stepsToSkip = Math.floor((targetMs - cursor.getTime()) / periodMs)
+    const periodDays = (p.FREQ === 'DAILY' ? 1 : 7) * interval
+    const periodMs = periodDays * 24 * 60 * 60 * 1000
+    const targetMs = dayjs(rangeStart).valueOf() - duration
+    if (cursor.valueOf() < targetMs && periodDays > 0) {
+      const stepsToSkip = Math.floor((targetMs - cursor.valueOf()) / periodMs)
       const skippable = maxCount !== null ? Math.min(stepsToSkip, maxCount - count) : stepsToSkip
-      cursor = new Date(cursor.getTime() + skippable * periodMs)
+      cursor = cursor.add(skippable * periodDays, 'day')
       count += skippable
     }
   }
 
   const SAFETY_CAP = 10000
   for (let iter = 0; iter < SAFETY_CAP; iter++) {
-    if (until && cursor > until) break
     if (maxCount !== null && count >= maxCount) break
-    if (cursor > rangeEnd) break
+    if (p.FREQ === 'WEEKLY' && byDay && byDay.length > 0) {
+      // For WEEKLY+BYDAY: cursor is the series anchor day (DTSTART weekday),
+      // not necessarily the earliest candidate in the week (e.g. DTSTART=MO
+      // but BYDAY=SU,MO). Use the week's Sunday as the termination guard so
+      // we don't exit the loop before generating earlier-in-week BYDAY
+      // candidates that are still within the range/UNTIL window.
+      const weekSunday = cursor.subtract(cursor.day(), 'day')
+      if (weekSunday.valueOf() > rangeEnd.getTime()) break
+      if (until && adjustForDST(weekSunday) > until) break
+    } else {
+      // For all other frequencies: cursor IS the candidate date. Apply the
+      // DST-adjusted cursor to UNTIL so a spring-forward shift does not cause
+      // the raw cursor to overshoot UNTIL by one hour and drop the final
+      // occurrence prematurely.
+      if (until && adjustForDST(cursor) > until) break
+      if (cursor.valueOf() > rangeEnd.getTime()) break
+    }
 
     // Collect candidate occurrence start times for this iteration
     let candidates
     if (p.FREQ === 'WEEKLY' && byDay && byDay.length > 0) {
       // Generate all matching weekdays in the week containing cursor.
-      // Use UTC APIs throughout so expansion is timezone-agnostic and
-      // produces consistent results regardless of the runtime's local TZ.
-      const sunday = new Date(cursor)
-      sunday.setUTCDate(cursor.getUTCDate() - cursor.getUTCDay())
+      // cursor is a dayjs UTC object; .day() returns the UTC day of week (0=Sun).
+      // dayjs date arithmetic preserves the time component of cursor, so no
+      // separate setUTCHours call is needed: adjustForDST re-derives the UTC
+      // instant for timezone-aware events, and .toDate() is returned as-is for
+      // floating/UTC events (both handled inside adjustForDST).
+      const sunday = cursor.subtract(cursor.day(), 'day')
       candidates = byDay
-        .map((dow) => {
-          const d = new Date(sunday)
-          d.setUTCDate(sunday.getUTCDate() + dow)
-          d.setUTCHours(
-            event.start.getUTCHours(),
-            event.start.getUTCMinutes(),
-            event.start.getUTCSeconds(),
-            event.start.getUTCMilliseconds(),
-          )
-          return d
-        })
+        .map((dow) => adjustForDST(sunday.add(dow, 'day')))
         .filter((d) => d >= event.start) // never before the series start
         .sort((a, b) => a - b)
     } else if (p.FREQ === 'MONTHLY' && byDayRules && byDayRules.length > 0) {
       // For MONTHLY + BYDAY, compute the Nth (or all) occurrence(s) of each
       // specified weekday within the month that cursor falls in.
       // e.g. BYDAY=3FR → third Friday; BYDAY=-1MO → last Monday; BYDAY=MO → every Monday.
-      const year = cursor.getUTCFullYear()
-      const month = cursor.getUTCMonth()
-      // Day-of-month of the last day of this month (1-based).
-      const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+      // cursor is a dayjs UTC object (normalized to day 1 of the month above).
+      const daysInMonth = cursor.daysInMonth()
+      const monthFirstDow = cursor.date(1).day() // UTC weekday of the 1st of this month
       candidates = byDayRules
         .flatMap(({ weekday, position }) => {
           // Find the day-of-month of the first occurrence of `weekday` in this month.
-          const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay()
-          const firstOccDay = 1 + ((weekday - firstDow + 7) % 7)
+          const firstOccDay = 1 + ((weekday - monthFirstDow + 7) % 7)
           // Collect all occurrences of this weekday in the month.
           const allOccDays = []
-          for (let day = firstOccDay; day <= lastDayOfMonth; day += 7) {
+          for (let day = firstOccDay; day <= daysInMonth; day += 7) {
             allOccDays.push(day)
           }
           let targetDays
@@ -451,24 +506,16 @@ function expandRRule(event, rangeStart, rangeEnd) {
             const d = allOccDays[allOccDays.length + position]
             targetDays = d !== undefined ? [d] : []
           }
-          return targetDays.map((day) =>
-            new Date(
-              Date.UTC(
-                year,
-                month,
-                day,
-                event.start.getUTCHours(),
-                event.start.getUTCMinutes(),
-                event.start.getUTCSeconds(),
-                event.start.getUTCMilliseconds(),
-              ),
-            ),
-          )
+          // cursor.date(day) sets the UTC day within the same month/year,
+          // preserving the time component. adjustForDST then re-derives the UTC
+          // instant for timezone-aware events, or returns the UTC Date directly
+          // for floating events.
+          return targetDays.map((day) => adjustForDST(cursor.date(day)))
         })
         .filter((d) => d >= event.start) // never before the series start
         .sort((a, b) => a - b)
     } else {
-      candidates = [new Date(cursor)]
+      candidates = [adjustForDST(cursor)]
     }
 
     for (const occ of candidates) {
@@ -476,33 +523,29 @@ function expandRRule(event, rangeStart, rangeEnd) {
       if (maxCount !== null && count >= maxCount) break
       count++
 
-      if (exdateSet.has(occ.getTime())) continue
+      if (exdateSet.has(dayjs(occ).valueOf())) continue
 
-      const occEnd = new Date(occ.getTime() + duration)
+      const occEnd = dayjs(occ).add(duration, 'millisecond').toDate()
       if (occEnd >= rangeStart && occ <= rangeEnd) {
         // eslint-disable-next-line no-unused-vars
         const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
-        results.push({ ...rest, start: occ, end: occEnd, id: `${event.id}__occ__${occ.getTime()}` })
+        results.push({ ...rest, start: occ, end: occEnd, id: `${event.id}__occ__${dayjs(occ).valueOf()}` })
       }
     }
 
     // Advance cursor by one recurrence period
     switch (p.FREQ) {
       case 'DAILY':
-        cursor = new Date(cursor)
-        cursor.setDate(cursor.getDate() + interval)
+        cursor = cursor.add(interval, 'day')
         break
       case 'WEEKLY':
-        cursor = new Date(cursor)
-        cursor.setDate(cursor.getDate() + 7 * interval)
+        cursor = cursor.add(7 * interval, 'day')
         break
       case 'MONTHLY':
-        cursor = new Date(cursor)
-        cursor.setUTCMonth(cursor.getUTCMonth() + interval)
+        cursor = cursor.add(interval, 'month')
         break
       case 'YEARLY':
-        cursor = new Date(cursor)
-        cursor.setFullYear(cursor.getFullYear() + interval)
+        cursor = cursor.add(interval, 'year')
         break
       default: {
         // Unknown frequency — cannot reliably expand; return a single
