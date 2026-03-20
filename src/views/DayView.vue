@@ -1,9 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc.js'
 import EventItem from '../components/EventItem.vue'
 import EventModal from '../components/EventModal.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone, midnightInTimezone, getTodayInTimezone } from '../composables/useTimezone.js'
+
+dayjs.extend(utc)
 
 const { events, loading, error, fetchEvents, loadSources, enabledSources, sources } = useCalendar()
 const { timezone } = useTimezone()
@@ -45,15 +49,20 @@ const tomorrowEnd = computed(() => dayAfterTomorrowStart.value)
 // a "9 AM" floating event is stored as T09:00:00Z).  Filtering them against
 // timezone-aware boundaries would shift them by the UTC offset, placing them
 // on the wrong day for non-UTC users.  Using UTC midnight avoids that.
-const todayUTCStart = computed(() =>
-  new Date(Date.UTC(todayParts.value.year, todayParts.value.month, todayParts.value.day)),
-)
-const tomorrowUTCStart = computed(() =>
-  new Date(Date.UTC(todayParts.value.year, todayParts.value.month, todayParts.value.day + 1)),
-)
-const dayAfterTomorrowUTCStart = computed(() =>
-  new Date(Date.UTC(todayParts.value.year, todayParts.value.month, todayParts.value.day + 2)),
-)
+// Date.UTC() is used as a pure numeric utility (no Date object mutation) to
+// obtain a UTC timestamp from components; dayjs.utc() wraps it for chaining.
+const todayUTCStart = computed(() => {
+  const { year, month, day } = todayParts.value
+  return dayjs.utc(Date.UTC(year, month, day)).toDate()
+})
+const tomorrowUTCStart = computed(() => {
+  const { year, month, day } = todayParts.value
+  return dayjs.utc(Date.UTC(year, month, day)).add(1, 'day').toDate()
+})
+const dayAfterTomorrowUTCStart = computed(() => {
+  const { year, month, day } = todayParts.value
+  return dayjs.utc(Date.UTC(year, month, day)).add(2, 'day').toDate()
+})
 
 const todayLabel = computed(() =>
   now.value.toLocaleDateString('default', {
@@ -74,14 +83,14 @@ const tomorrowLabel = computed(() =>
 
 function eventsForDay(dayStart, dayEnd, utcDayStart, utcDayEnd) {
   return events.value.filter((e) => {
-    const evtStart = new Date(e.start)
-    const evtEnd = e.end ? new Date(e.end) : evtStart
+    const evtStart = dayjs(e.start)
+    const evtEnd = e.end ? dayjs(e.end) : evtStart
     if (e.floating) {
       // Floating-time events: filter by UTC day boundaries so their wall-clock
       // date is honoured regardless of the viewer's UTC offset.
-      return evtStart < utcDayEnd && evtEnd > utcDayStart
+      return evtStart.isBefore(utcDayEnd) && evtEnd.isAfter(utcDayStart)
     }
-    return evtStart < dayEnd && evtEnd > dayStart
+    return evtStart.isBefore(dayEnd) && evtEnd.isAfter(dayStart)
   })
 }
 
@@ -126,17 +135,17 @@ const sortedTodayEvents = computed(() =>
   [...todayEvents.value].sort((a, b) => {
     if (a.allDay && !b.allDay) return -1
     if (!a.allDay && b.allDay) return 1
-    return new Date(a.start) - new Date(b.start)
+    return dayjs(a.start).valueOf() - dayjs(b.start).valueOf()
   }),
 )
 
 // Index in sortedTodayEvents where the now indicator should be inserted.
 // Events before this index have already started; events at/after are upcoming.
 const nowLineIndex = computed(() => {
-  const nowMs = now.value.getTime()
+  const nowMs = dayjs(now.value).valueOf()
   const nowWCMs = nowWallClockMs.value
   const idx = sortedTodayEvents.value.findIndex((e) => {
-    const startMs = new Date(e.start).getTime()
+    const startMs = dayjs(e.start).valueOf()
     return e.floating ? startMs > nowWCMs : startMs > nowMs
   })
   return idx === -1 ? sortedTodayEvents.value.length : idx
@@ -146,11 +155,11 @@ const nowLineIndex = computed(() => {
 // Events without an explicit end time are treated as zero-duration (start === end)
 // and are considered past once their start time has passed.
 function isPastEvent(event) {
-  const evtEnd = event.end ? new Date(event.end) : new Date(event.start)
+  const evtEnd = dayjs(event.end ?? event.start)
   if (event.floating) {
-    return evtEnd.getTime() < nowWallClockMs.value
+    return evtEnd.valueOf() < nowWallClockMs.value
   }
-  return evtEnd.getTime() < now.value.getTime()
+  return evtEnd.valueOf() < dayjs(now.value).valueOf()
 }
 
 async function loadEvents() {
@@ -158,8 +167,8 @@ async function loadEvents() {
   // floating-time events (which are filtered by UTC day) are included even
   // when the user's UTC offset would otherwise exclude them (e.g. a floating
   // "02:00" event for a UTC-5 user whose TZ day starts at 05:00 UTC).
-  const fetchStart = new Date(Math.min(todayStart.value.getTime(), todayUTCStart.value.getTime()))
-  const fetchEnd = new Date(Math.max(tomorrowEnd.value.getTime(), dayAfterTomorrowUTCStart.value.getTime()))
+  const fetchStart = new Date(Math.min(dayjs(todayStart.value).valueOf(), dayjs(todayUTCStart.value).valueOf()))
+  const fetchEnd = new Date(Math.max(dayjs(tomorrowEnd.value).valueOf(), dayjs(dayAfterTomorrowUTCStart.value).valueOf()))
   await fetchEvents(fetchStart, fetchEnd)
 }
 

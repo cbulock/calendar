@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import dayjs from 'dayjs'
 import EventItem from '../components/EventItem.vue'
 import EventModal from '../components/EventModal.vue'
 import { useCalendar } from '../composables/useCalendar.js'
@@ -16,26 +17,19 @@ const todayInTZ = computed(() => getTodayInTimezone(timezone.value))
 // Sunday of the displayed week
 const weekStart = computed(() => {
   const { year, month, day } = todayInTZ.value
-  const d = new Date(year, month, day)
-  d.setDate(d.getDate() - d.getDay() + weekOffset.value * 7)
-  return midnightInTimezone(d.getFullYear(), d.getMonth(), d.getDate(), timezone.value)
+  const d = dayjs(new Date(year, month, day)).add(weekOffset.value * 7, 'day')
+  const sunday = d.subtract(d.day(), 'day')
+  return midnightInTimezone(sunday.year(), sunday.month(), sunday.date(), timezone.value)
 })
 
 // Saturday (end) of the displayed week — exclusive upper bound (midnight Sunday)
-const weekEnd = computed(() => {
-  const ws = weekStart.value
-  const d = new Date(ws)
-  d.setDate(d.getDate() + 7)
-  return d
-})
+const weekEnd = computed(() => dayjs(weekStart.value).add(7, 'day').toDate())
 
 // Build the 7 day columns for the week
 const days = computed(() => {
   return Array.from({ length: 7 }, (_, i) => {
-    const dayStart = new Date(weekStart.value)
-    dayStart.setDate(dayStart.getDate() + i)
-    const dayEnd = new Date(dayStart)
-    dayEnd.setDate(dayEnd.getDate() + 1)
+    const dayStart = dayjs(weekStart.value).add(i, 'day').toDate()
+    const dayEnd = dayjs(dayStart).add(1, 'day').toDate()
     return { dayStart, dayEnd }
   })
 })
@@ -43,8 +37,7 @@ const days = computed(() => {
 // Label for the week range displayed in the header
 const weekLabel = computed(() => {
   const start = weekStart.value
-  const end = new Date(weekEnd.value)
-  end.setDate(end.getDate() - 1) // Saturday
+  const end = dayjs(weekEnd.value).subtract(1, 'day').toDate() // Saturday
   const fmt = (d) =>
     d.toLocaleDateString('default', { month: 'short', day: 'numeric', timeZone: timezone.value })
   const yearStr = end.toLocaleDateString('default', { year: 'numeric', timeZone: timezone.value })
@@ -67,9 +60,9 @@ function dayNumber(dayStart) {
 
 function eventsForDay(dayStart, dayEnd) {
   return events.value.filter((e) => {
-    const evtStart = new Date(e.start)
-    const evtEnd = e.end ? new Date(e.end) : evtStart
-    return evtStart < dayEnd && evtEnd > dayStart
+    const evtStart = dayjs(e.start)
+    const evtEnd = e.end ? dayjs(e.end) : evtStart
+    return evtStart.isBefore(dayEnd) && evtEnd.isAfter(dayStart)
   })
 }
 
@@ -77,13 +70,9 @@ function eventsForDay(dayStart, dayEnd) {
 const todayParts = computed(() => todayInTZ.value)
 
 function isToday(dayStart) {
-  const d = new Date(dayStart)
+  const d = dayjs(dayStart)
   const t = todayParts.value
-  return (
-    d.getFullYear() === t.year &&
-    d.getMonth() === t.month &&
-    d.getDate() === t.day
-  )
+  return d.year() === t.year && d.month() === t.month && d.date() === t.day
 }
 
 async function loadEvents() {

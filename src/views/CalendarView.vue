@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import dayjs from 'dayjs'
 import CalendarGrid from '../components/CalendarGrid.vue'
 import EventModal from '../components/EventModal.vue'
 import { useCalendar } from '../composables/useCalendar.js'
@@ -14,14 +15,12 @@ const monthOffset = ref(0)
 const todayInTZ = computed(() => getTodayInTimezone(timezone.value))
 
 // Derive display year/month from today + offset
-const displayYear = computed(() => {
-  const d = new Date(todayInTZ.value.year, todayInTZ.value.month + monthOffset.value, 1)
-  return d.getFullYear()
+const displayDate = computed(() => {
+  const { year, month } = todayInTZ.value
+  return dayjs({ year, month, date: 1 }).add(monthOffset.value, 'month')
 })
-const displayMonth = computed(() => {
-  const d = new Date(todayInTZ.value.year, todayInTZ.value.month + monthOffset.value, 1)
-  return d.getMonth()
-})
+const displayYear = computed(() => displayDate.value.year())
+const displayMonth = computed(() => displayDate.value.month())
 
 const monthStart = computed(() => midnightInTimezone(displayYear.value, displayMonth.value, 1, timezone.value))
 const monthEnd = computed(() => midnightInTimezone(displayYear.value, displayMonth.value + 1, 1, timezone.value))
