@@ -204,14 +204,18 @@ function resolveTimezone(tzid) {
  * @returns {string}
  */
 function preprocessICS(icsText) {
-  // 1. Windows TZ → IANA in TZID= parameters
-  let text = icsText.replace(/TZID=([^:;\r\n]+)/g, (match, tzid) => {
+  // 1. Windows TZ → IANA in TZID= parameters (RFC 5545 property/parameter names
+  //    are case-insensitive, so match tzid= in any casing)
+  let text = icsText.replace(/TZID=([^:;\r\n]+)/gi, (match, tzid) => {
     const iana = WINDOWS_TO_IANA[tzid.trim()]
     return iana ? `TZID=${iana}` : match
   })
-  // 2. Add VALUE=DATE for bare 8-digit date values (no time component)
-  text = text.replace(/^(DTSTART|DTEND|EXDATE)([^:]*):(\d{8})\r?$/gm, (match, prop, params, date) => {
-    if (params.includes('VALUE=DATE')) return match
+  // 2. Add VALUE=DATE for bare 8-digit date values (no time component).
+  //    RFC 5545 names are case-insensitive, so match dtstart/dtend/exdate in any casing.
+  //    Also check for an existing VALUE=DATE (or value=date) param case-insensitively to
+  //    avoid adding a duplicate.
+  text = text.replace(/^(DTSTART|DTEND|EXDATE)([^:]*):(\d{8})\r?$/gim, (match, prop, params, date) => {
+    if (params.toUpperCase().includes('VALUE=DATE')) return match
     const cr = match.endsWith('\r') ? '\r' : ''
     return params
       ? `${prop}${params};VALUE=DATE:${date}${cr}`
