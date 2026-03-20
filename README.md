@@ -47,7 +47,7 @@ npm test
 
 ### DateTime Rules
 
-**All date/time arithmetic must use [dayjs](https://day.js.org/)** (imported with the `utc`, `customParseFormat`, and `timezone` plugins).  Never use raw JavaScript `Date` arithmetic for anything timezone-sensitive.
+**All date/time arithmetic must use [dayjs](https://day.js.org/)** (imported with the `utc`, `customParseFormat`, and `timezone` plugins).  Treat any direct use of the native `Date` object as suspect — even code that looks UTC-safe is fragile and easy to break during refactoring.
 
 | ✅ Correct (DST-aware) | ❌ Incorrect (DST-blind) |
 |---|---|
