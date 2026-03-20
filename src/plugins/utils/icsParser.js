@@ -406,7 +406,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
     const mm  = String(localWallClock.minute).padStart(2, '0')
     const ss  = String(localWallClock.second).padStart(2, '0')
     try {
-      return dayjs.tz(`${y}-${mo}-${day}T${hh}:${mm}:${ss}`, localWallClock.tz).toDate()
+      return dayjs.tz(`${y}-${mo}-${day}T${hh}:${mm}:${ss}`, 'YYYY-MM-DDTHH:mm:ss', localWallClock.tz).toDate()
     } catch {
       return d
     }
