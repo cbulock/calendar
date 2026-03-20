@@ -834,12 +834,11 @@ END:VCALENDAR`
       new Date('2025-05-31T23:59:59Z'),
     )
     // 3rd Fridays in Mar–May 2025: Mar 21, Apr 18, May 16 — all must be Friday (UTC day 5)
-    expect(result.length).toBeGreaterThanOrEqual(3)
-    const firstThree = result.slice(0, 3)
-    firstThree.forEach((e) => expect(e.start.getUTCDay()).toBe(5))
-    expect(firstThree[0].start.toISOString()).toBe('2025-03-21T18:30:00.000Z')
-    expect(firstThree[1].start.toISOString()).toBe('2025-04-18T18:30:00.000Z')
-    expect(firstThree[2].start.toISOString()).toBe('2025-05-16T18:30:00.000Z')
+    expect(result.length).toBe(3)
+    result.forEach((e) => expect(e.start.getUTCDay()).toBe(5))
+    expect(result[0].start.toISOString()).toBe('2025-03-21T18:30:00.000Z')
+    expect(result[1].start.toISOString()).toBe('2025-04-18T18:30:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2025-05-16T18:30:00.000Z')
   })
 })
 

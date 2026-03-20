@@ -370,6 +370,15 @@ function expandRRule(event, rangeStart, rangeEnd) {
   let cursor = new Date(event.start)
   let count = 0
 
+  // For MONTHLY+BYDAY, normalize cursor to the 1st of the event's start month.
+  // This ensures the outer-loop termination checks (cursor > until, cursor > rangeEnd)
+  // never fire before candidates for that month have been generated — a BYDAY candidate
+  // (e.g. the 3rd Friday on the 18th) can be earlier in the month than the original
+  // DTSTART day-of-month (e.g. the 21st).
+  if (p.FREQ === 'MONTHLY' && byDayRules && byDayRules.length > 0) {
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1))
+  }
+
   // Fast-forward cursor for simple (non-BYDAY) daily/weekly rules to avoid
   // iterating through years of history one step at a time.
   if (p.FREQ === 'DAILY' || (p.FREQ === 'WEEKLY' && !byDay)) {
@@ -489,7 +498,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
         break
       case 'MONTHLY':
         cursor = new Date(cursor)
-        cursor.setMonth(cursor.getMonth() + interval)
+        cursor.setUTCMonth(cursor.getUTCMonth() + interval)
         break
       case 'YEARLY':
         cursor = new Date(cursor)
