@@ -6,6 +6,19 @@
  * using dayjs (with the timezone plugin) so that Outlook/Exchange Windows
  * timezone names, floating-time events, and all-day events are all handled
  * correctly.
+ *
+ * ## DateTime convention
+ * ALL date/time arithmetic in this file MUST use dayjs (or dayjs.tz() for
+ * timezone-aware work).  Never use raw JavaScript Date arithmetic (setDate,
+ * setHours, fixed-ms offsets, etc.) for anything timezone-sensitive, because
+ * plain Date operations are unaware of DST transitions and will produce
+ * incorrect results when a recurring event's occurrences span a DST boundary.
+ *
+ * Correct pattern:
+ *   dayjs.tz('2026-03-12T12:30:00', 'America/Denver').toDate()  // DST-aware
+ *
+ * Incorrect pattern:
+ *   new Date(someDate.getTime() + 7 * 24 * 60 * 60 * 1000)     // DST-blind
  */
 
 import ICAL from 'ical.js'
@@ -363,6 +376,42 @@ function expandRRule(event, rangeStart, rangeEnd) {
 
   const duration = event.end.getTime() - event.start.getTime()
 
+  // For timezone-aware recurring events, extract the wall-clock time (hour,
+  // minute, second) of the series start in the source timezone.  This lets
+  // each occurrence be converted to UTC via dayjs.tz() so that DST transitions
+  // are handled correctly — e.g. an event at 12:30 "Mountain Standard Time"
+  // stays at 12:30 MDT (not 12:30 MST) after the clocks spring forward.
+  // Without this, all occurrences would share the fixed UTC offset of DTSTART,
+  // showing an hour late (or early) after a DST change.
+  let localWallClock = null
+  if (event.startTzid && !event.floating) {
+    const s = dayjs(event.start).tz(event.startTzid)
+    localWallClock = { hour: s.hour(), minute: s.minute(), second: s.second(), tz: event.startTzid }
+  }
+
+  /**
+   * Given a Date whose UTC year/month/day represent the intended occurrence
+   * date, return a new Date at the correct UTC instant by applying the series
+   * wall-clock time in the source timezone.  Falls back to the input date when
+   * no timezone info is available (floating / UTC events).
+   * @param {Date} d
+   * @returns {Date}
+   */
+  const adjustForDST = (d) => {
+    if (!localWallClock) return d
+    const y   = d.getUTCFullYear()
+    const mo  = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    const hh  = String(localWallClock.hour).padStart(2, '0')
+    const mm  = String(localWallClock.minute).padStart(2, '0')
+    const ss  = String(localWallClock.second).padStart(2, '0')
+    try {
+      return dayjs.tz(`${y}-${mo}-${day}T${hh}:${mm}:${ss}`, localWallClock.tz).toDate()
+    } catch {
+      return d
+    }
+  }
+
   // Build a set of excluded occurrence start times (epoch ms) for fast lookup
   const exdateSet = new Set((event.exdates ?? []).map((d) => d.getTime()))
 
@@ -394,7 +443,10 @@ function expandRRule(event, rangeStart, rangeEnd) {
 
   const SAFETY_CAP = 10000
   for (let iter = 0; iter < SAFETY_CAP; iter++) {
-    if (until && cursor > until) break
+    // Compare the DST-adjusted cursor against UNTIL so that a spring-forward
+    // shift in the source timezone does not cause the raw cursor to exceed
+    // UNTIL by one hour and drop the final occurrence prematurely.
+    if (until && adjustForDST(new Date(cursor)) > until) break
     if (maxCount !== null && count >= maxCount) break
     if (cursor > rangeEnd) break
 
@@ -410,13 +462,16 @@ function expandRRule(event, rangeStart, rangeEnd) {
         .map((dow) => {
           const d = new Date(sunday)
           d.setUTCDate(sunday.getUTCDate() + dow)
+          // Apply the wall-clock time in the source timezone so DST transitions
+          // are respected.  For floating/UTC events adjustForDST is a no-op and
+          // the UTC hours from event.start are used directly.
           d.setUTCHours(
             event.start.getUTCHours(),
             event.start.getUTCMinutes(),
             event.start.getUTCSeconds(),
             event.start.getUTCMilliseconds(),
           )
-          return d
+          return adjustForDST(d)
         })
         .filter((d) => d >= event.start) // never before the series start
         .sort((a, b) => a - b)
@@ -452,15 +507,17 @@ function expandRRule(event, rangeStart, rangeEnd) {
             targetDays = d !== undefined ? [d] : []
           }
           return targetDays.map((day) =>
-            new Date(
-              Date.UTC(
-                year,
-                month,
-                day,
-                event.start.getUTCHours(),
-                event.start.getUTCMinutes(),
-                event.start.getUTCSeconds(),
-                event.start.getUTCMilliseconds(),
+            adjustForDST(
+              new Date(
+                Date.UTC(
+                  year,
+                  month,
+                  day,
+                  event.start.getUTCHours(),
+                  event.start.getUTCMinutes(),
+                  event.start.getUTCSeconds(),
+                  event.start.getUTCMilliseconds(),
+                ),
               ),
             ),
           )
@@ -468,7 +525,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
         .filter((d) => d >= event.start) // never before the series start
         .sort((a, b) => a - b)
     } else {
-      candidates = [new Date(cursor)]
+      candidates = [adjustForDST(new Date(cursor))]
     }
 
     for (const occ of candidates) {

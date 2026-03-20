@@ -43,6 +43,20 @@ npm run build
 npm test
 ```
 
+## Contributing
+
+### DateTime Rules
+
+**All date/time arithmetic must use [dayjs](https://day.js.org/)** (imported with the `utc`, `customParseFormat`, and `timezone` plugins).  Never use raw JavaScript `Date` arithmetic for anything timezone-sensitive.
+
+| ✅ Correct (DST-aware) | ❌ Incorrect (DST-blind) |
+|---|---|
+| `dayjs.tz('2026-03-12T12:30:00', 'America/Denver').toDate()` | `new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000)` |
+| `dayjs(date).tz(tz).hour()` | `date.getHours()` |
+| `dayjs.tz(str, tz).toDate()` | `new Date(Date.UTC(y, m, d, h, min))` |
+
+Raw `Date` methods are unaware of Daylight Saving Time transitions.  A recurring event that starts in winter and runs past a DST boundary will display at the wrong time if its occurrences are generated with fixed UTC-offset arithmetic.
+
 ## Adding a New Calendar Plugin
 
 Create a new file in `src/plugins/` exporting a plugin object, then register it in `src/plugins/index.js`:
@@ -87,4 +101,3 @@ src/
     ├── EventItem.vue
     └── PluginCard.vue
 ```
-
