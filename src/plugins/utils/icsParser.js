@@ -464,14 +464,17 @@ function expandRRule(event, rangeStart, rangeEnd) {
           const d = new Date(sunday)
           d.setUTCDate(sunday.getUTCDate() + dow)
           // Apply the wall-clock time in the source timezone so DST transitions
-          // are respected.  For floating/UTC events adjustForDST is a no-op and
-          // the UTC hours from event.start are used directly.
-          d.setUTCHours(
-            event.start.getUTCHours(),
-            event.start.getUTCMinutes(),
-            event.start.getUTCSeconds(),
-            event.start.getUTCMilliseconds(),
-          )
+          // are respected. For floating/UTC events (when localWallClock is null)
+          // adjustForDST is effectively a no-op and the UTC hours from
+          // event.start should be used directly.
+          if (localWallClock == null) {
+            d.setUTCHours(
+              event.start.getUTCHours(),
+              event.start.getUTCMinutes(),
+              event.start.getUTCSeconds(),
+              event.start.getUTCMilliseconds(),
+            )
+          }
           return adjustForDST(d)
         })
         .filter((d) => d >= event.start) // never before the series start
