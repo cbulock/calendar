@@ -29,7 +29,7 @@
  *     allDay: boolean
  *     description?: string
  *     location?: string
- *     status?: string   — 'TENTATIVE' | 'CONFIRMED' | '' (absent means no STATUS property)
+ *     status: 'TENTATIVE' | 'CONFIRMED' | ''   — always present; '' means no STATUS in source
  *     source: string    — plugin id
  *   }
  */
