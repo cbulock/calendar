@@ -443,12 +443,13 @@ function expandRRule(event, rangeStart, rangeEnd) {
 
   const SAFETY_CAP = 10000
   for (let iter = 0; iter < SAFETY_CAP; iter++) {
+    const isWeeklyByDay = p.FREQ === 'WEEKLY' && byDay && byDay.length > 0
     // Compare the DST-adjusted cursor against UNTIL so that a spring-forward
     // shift in the source timezone does not cause the raw cursor to exceed
     // UNTIL by one hour and drop the final occurrence prematurely.
-    if (until && adjustForDST(new Date(cursor)) > until) break
+    if (until && !isWeeklyByDay && adjustForDST(new Date(cursor)) > until) break
     if (maxCount !== null && count >= maxCount) break
-    if (cursor > rangeEnd) break
+    if (!isWeeklyByDay && cursor > rangeEnd) break
 
     // Collect candidate occurrence start times for this iteration
     let candidates
