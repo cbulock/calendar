@@ -434,6 +434,34 @@ END:VCALENDAR`
     const events = parseICSData(ics, 'src')
     expect(events[0].title).toBe('Folded title')
   })
+
+  it('handles lowercase property names (case-insensitive ICS per RFC 5545)', () => {
+    // Some ICS generators emit lowercase property names; RFC 5545 says they are
+    // case-insensitive, so preprocessing must handle dtstart, dtend, tzid= etc.
+    const ics = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nuid:lower-case@test\r\nsummary:Lower Case Event\r\ndtstart:20250315T100000Z\r\ndtend:20250315T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+    expect(events[0].title).toBe('Lower Case Event')
+    expect(events[0].allDay).toBe(false)
+  })
+
+  it('detects all-day events with lowercase dtstart (case-insensitive)', () => {
+    // preprocessICS must match dtstart (lowercase) when adding VALUE=DATE
+    const ics = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:lower-allday@test\r\nSUMMARY:Lowercase All Day\r\ndtstart:20250315\r\ndtend:20250316\r\nEND:VEVENT\r\nEND:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+    expect(events[0].allDay).toBe(true)
+  })
+
+  it('converts a Windows timezone with lowercase tzid= parameter', () => {
+    // RFC 5545 is case-insensitive for parameter names; preprocessICS must match tzid= (lowercase)
+    const ics = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:lower-tzid@test\r\nSUMMARY:Lowercase TZID\r\nDTSTART;tzid=Eastern Standard Time:20250115T100000\r\nDTEND;tzid=Eastern Standard Time:20250115T110000\r\nEND:VEVENT\r\nEND:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+    // Eastern Standard Time = UTC-5; 10:00 local → 15:00 UTC
+    expect(events[0].start.toISOString()).toBe('2025-01-15T15:00:00.000Z')
+    expect(events[0].floating).toBeFalsy()
+  })
 })
 
 describe('expandEvents', () => {
