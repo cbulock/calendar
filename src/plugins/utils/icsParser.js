@@ -311,7 +311,9 @@ function parseRRuleParams(rrule) {
 /**
  * Expand a single recurring event into all occurrences that overlap [rangeStart, rangeEnd].
  * Supports FREQ=DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL, UNTIL, and COUNT.
- * For FREQ=WEEKLY, BYDAY is also supported.
+ * For FREQ=WEEKLY, BYDAY is supported (plain weekday codes).
+ * For FREQ=MONTHLY, BYDAY is supported with optional positional prefixes
+ * (e.g. "3FR" = third Friday, "-1MO" = last Monday, "MO" = every Monday).
  *
  * @param {object} event      - Base event object (must have start, end, rrule, exdates)
  * @param {Date}   rangeStart - Inclusive start of the requested window
@@ -342,14 +344,22 @@ function expandRRule(event, rangeStart, rangeEnd) {
   })()
   const maxCount = p.COUNT ? parseInt(p.COUNT, 10) : null
 
-  // Strip positional prefix (e.g. "1MO", "-1FR" → "MO", "FR") then map to JS day index.
-  // Filter out any codes that do not map to a known weekday.
-  const byDay = p.BYDAY
+  // Parse BYDAY entries, preserving positional prefixes (e.g. "3FR" → {weekday:5, position:3},
+  // "-1MO" → {weekday:1, position:-1}, "MO" → {weekday:1, position:null}).
+  const byDayRules = p.BYDAY
     ? p.BYDAY
         .split(',')
-        .map((d) => RRULE_WEEKDAY[d.replace(/^[+-]?\d+/, '').trim()])
-        .filter((d) => d !== undefined)
+        .map((d) => {
+          const m = d.trim().match(/^([+-]?\d+)?([A-Z]{2})$/i)
+          if (!m) return null
+          const wd = RRULE_WEEKDAY[m[2].toUpperCase()]
+          if (wd === undefined) return null
+          return { weekday: wd, position: m[1] ? parseInt(m[1], 10) : null }
+        })
+        .filter(Boolean)
     : null
+  // Plain weekday array used by the WEEKLY branch (positional info not needed there).
+  const byDay = byDayRules ? byDayRules.map((b) => b.weekday) : null
 
   const duration = event.end.getTime() - event.start.getTime()
 
@@ -359,6 +369,15 @@ function expandRRule(event, rangeStart, rangeEnd) {
   const results = []
   let cursor = new Date(event.start)
   let count = 0
+
+  // For MONTHLY+BYDAY, normalize cursor to the 1st of the event's start month.
+  // This ensures the outer-loop termination checks (cursor > until, cursor > rangeEnd)
+  // never fire before candidates for that month have been generated — a BYDAY candidate
+  // (e.g. the 3rd Friday on the 18th) can be earlier in the month than the original
+  // DTSTART day-of-month (e.g. the 21st).
+  if (p.FREQ === 'MONTHLY' && byDayRules && byDayRules.length > 0) {
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1))
+  }
 
   // Fast-forward cursor for simple (non-BYDAY) daily/weekly rules to avoid
   // iterating through years of history one step at a time.
@@ -401,6 +420,53 @@ function expandRRule(event, rangeStart, rangeEnd) {
         })
         .filter((d) => d >= event.start) // never before the series start
         .sort((a, b) => a - b)
+    } else if (p.FREQ === 'MONTHLY' && byDayRules && byDayRules.length > 0) {
+      // For MONTHLY + BYDAY, compute the Nth (or all) occurrence(s) of each
+      // specified weekday within the month that cursor falls in.
+      // e.g. BYDAY=3FR → third Friday; BYDAY=-1MO → last Monday; BYDAY=MO → every Monday.
+      const year = cursor.getUTCFullYear()
+      const month = cursor.getUTCMonth()
+      // Day-of-month of the last day of this month (1-based).
+      const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+      candidates = byDayRules
+        .flatMap(({ weekday, position }) => {
+          // Find the day-of-month of the first occurrence of `weekday` in this month.
+          const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay()
+          const firstOccDay = 1 + ((weekday - firstDow + 7) % 7)
+          // Collect all occurrences of this weekday in the month.
+          const allOccDays = []
+          for (let day = firstOccDay; day <= lastDayOfMonth; day += 7) {
+            allOccDays.push(day)
+          }
+          let targetDays
+          if (position === null) {
+            // No positional prefix → every occurrence of this weekday in the month.
+            targetDays = allOccDays
+          } else if (position > 0) {
+            // Positive: Nth from start (1 = first).
+            const d = allOccDays[position - 1]
+            targetDays = d !== undefined ? [d] : []
+          } else {
+            // Negative: Nth from end (-1 = last).
+            const d = allOccDays[allOccDays.length + position]
+            targetDays = d !== undefined ? [d] : []
+          }
+          return targetDays.map((day) =>
+            new Date(
+              Date.UTC(
+                year,
+                month,
+                day,
+                event.start.getUTCHours(),
+                event.start.getUTCMinutes(),
+                event.start.getUTCSeconds(),
+                event.start.getUTCMilliseconds(),
+              ),
+            ),
+          )
+        })
+        .filter((d) => d >= event.start) // never before the series start
+        .sort((a, b) => a - b)
     } else {
       candidates = [new Date(cursor)]
     }
@@ -432,7 +498,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
         break
       case 'MONTHLY':
         cursor = new Date(cursor)
-        cursor.setMonth(cursor.getMonth() + interval)
+        cursor.setUTCMonth(cursor.getUTCMonth() + interval)
         break
       case 'YEARLY':
         cursor = new Date(cursor)

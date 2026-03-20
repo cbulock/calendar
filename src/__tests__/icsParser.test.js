@@ -735,5 +735,110 @@ describe('expandEvents', () => {
     // Jan 1, Jan 15, Jan 29, Feb 12, Feb 26, Mar 12, Mar 26 = 7 occurrences
     expect(result.length).toBe(7)
   })
+
+  it('expands FREQ=MONTHLY with positional BYDAY (3rd Friday)', () => {
+    // DTSTART is Dec 20 2024 (3rd Friday of December 2024), before rangeStart
+    const baseStart = new Date('2024-12-20T09:00:00Z') // Friday
+    const baseEnd = new Date('2024-12-20T09:30:00Z')
+    const events = [
+      {
+        id: 'monthly-3fr@test',
+        title: '3rd Friday Monthly',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYDAY=3FR',
+      },
+    ]
+    // Range Jan–Mar 2025
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // 3rd Fridays: Jan 17, Feb 21, Mar 21
+    expect(result.length).toBe(3)
+    expect(result[0].start.toISOString()).toBe('2025-01-17T09:00:00.000Z')
+    expect(result[1].start.toISOString()).toBe('2025-02-21T09:00:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2025-03-21T09:00:00.000Z')
+    // All should be Fridays (UTC day 5)
+    result.forEach((e) => expect(e.start.getUTCDay()).toBe(5))
+  })
+
+  it('expands FREQ=MONTHLY with last-weekday BYDAY (-1MO = last Monday)', () => {
+    // DTSTART is Jan 27 2025 (last Monday of January)
+    const baseStart = new Date('2025-01-27T10:00:00Z')
+    const baseEnd = new Date('2025-01-27T11:00:00Z')
+    const events = [
+      {
+        id: 'monthly-last-mon@test',
+        title: 'Last Monday Monthly',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYDAY=-1MO',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Last Mondays: Jan 27, Feb 24, Mar 31
+    expect(result.length).toBe(3)
+    expect(result[0].start.toISOString()).toBe('2025-01-27T10:00:00.000Z')
+    expect(result[1].start.toISOString()).toBe('2025-02-24T10:00:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2025-03-31T10:00:00.000Z')
+    // All should be Mondays (UTC day 1)
+    result.forEach((e) => expect(e.start.getUTCDay()).toBe(1))
+  })
+
+  it('expands FREQ=MONTHLY with unpositioned BYDAY (every Friday of the month)', () => {
+    // DTSTART is Jan 3 2025 (first Friday of January)
+    const baseStart = new Date('2025-01-03T09:00:00Z')
+    const baseEnd = new Date('2025-01-03T09:30:00Z')
+    const events = [
+      {
+        id: 'monthly-all-fri@test',
+        title: 'All Fridays Monthly',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYDAY=FR',
+      },
+    ]
+    // Range Jan 2025 only
+    const result = expandEvents(
+      events,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2025-01-31T23:59:59Z'),
+    )
+    // January 2025 Fridays: Jan 3, 10, 17, 24, 31
+    expect(result.length).toBe(5)
+    result.forEach((e) => expect(e.start.getUTCDay()).toBe(5))
+  })
+
+  it('reproduces the bug report: FREQ=MONTHLY;BYDAY=3FR shows on correct day', () => {
+    // From issue: DTSTART;TZID=Central Standard Time:20250321T133000
+    // Central Standard Time = America/Chicago; March 21 observes CDT (UTC-5) → 18:30Z
+    const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:040000008200E00074C5B7101A82E008@test
+SUMMARY:Test
+DTSTART;TZID=Central Standard Time:20250321T133000
+DTEND;TZID=Central Standard Time:20250321T140000
+RRULE:FREQ=MONTHLY;UNTIL=20270319T183000Z;INTERVAL=1;BYDAY=3FR
+END:VEVENT
+END:VCALENDAR`
+    const parsed = parseICSData(ics, 'test')
+    const result = expandEvents(
+      parsed,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-05-31T23:59:59Z'),
+    )
+    // 3rd Fridays in Mar–May 2025: Mar 21, Apr 18, May 16 — all must be Friday (UTC day 5)
+    expect(result.length).toBe(3)
+    result.forEach((e) => expect(e.start.getUTCDay()).toBe(5))
+    expect(result[0].start.toISOString()).toBe('2025-03-21T18:30:00.000Z')
+    expect(result[1].start.toISOString()).toBe('2025-04-18T18:30:00.000Z')
+    expect(result[2].start.toISOString()).toBe('2025-05-16T18:30:00.000Z')
+  })
 })
 
