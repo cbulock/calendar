@@ -129,6 +129,38 @@ END:VCALENDAR`
     expect(events[0].status).toBe('TENTATIVE')
   })
 
+  it('normalises STATUS values with surrounding whitespace to TENTATIVE', () => {
+    // Some ICS generators emit STATUS: TENTATIVE (with a space after the colon).
+    // RFC 5545 says the value starts immediately after the colon, so the space is
+    // part of the value string returned by ical.js.  .trim() strips it so the
+    // strict === 'TENTATIVE' comparison still matches.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:tentative-ws@test
+SUMMARY:Whitespace Status
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS: TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('normalises STATUS values with surrounding whitespace to CANCELLED (and filters the event)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:cancelled-ws@test
+SUMMARY:Whitespace Cancelled
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS: CANCELLED
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(0)
+  })
+
   it('sets status to empty string when STATUS is absent', () => {
     const events = parseICSData(SAMPLE_ICS, 'test-source')
     const meeting = events.find((e) => e.id === 'event-001@test')

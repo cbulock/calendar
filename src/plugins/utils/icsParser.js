@@ -614,7 +614,7 @@ export function parseICSData(icsText, sourceId) {
     // RFC 5545 defines three VEVENT statuses: TENTATIVE, CONFIRMED, CANCELLED.
     // TENTATIVE and CONFIRMED events represent real calendar time and should be
     // displayed.  Only CANCELLED events are hidden.
-    const rawStatus = (vevent.getFirstPropertyValue('status') || '').toUpperCase()
+    const rawStatus = (vevent.getFirstPropertyValue('status') || '').trim().toUpperCase()
     if (rawStatus === 'CANCELLED') continue
 
     // DTSTART is required for a usable event
@@ -655,7 +655,7 @@ export function parseICSData(icsText, sourceId) {
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')
       if (attendeeProps.length === 1) {
-        const partstat = (attendeeProps[0].getParameter('partstat') || '').toUpperCase()
+        const partstat = (attendeeProps[0].getParameter('partstat') || '').trim().toUpperCase()
         if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
           status = 'TENTATIVE'
         }
