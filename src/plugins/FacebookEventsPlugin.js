@@ -57,7 +57,15 @@ const FacebookEventsPlugin = {
       throw new Error(`Failed to fetch Facebook Events: ${response.statusText}`)
     }
     const icsText = await response.text()
-    const rawEvents = parseICSData(icsText, this.id)
+    const rawEvents = parseICSData(icsText, this.id, {
+      // Facebook emits a top-level PARTSTAT:TENTATIVE property on the VEVENT
+      // (distinct from PARTSTAT as a parameter on an ATTENDEE line) to indicate
+      // the user's tentative acceptance alongside STATUS:CONFIRMED.
+      resolveStatus(status, getProp) {
+        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
     const events = expandEvents(rawEvents, start, end)
     return events.filter((e) => e.end >= start && e.start <= end)
   },

@@ -254,6 +254,66 @@ END:VCALENDAR`
     expect(events[0].status).toBe('')
   })
 
+  it('overrides STATUS:CONFIRMED to TENTATIVE when X-MICROSOFT-CDO-BUSYSTATUS is TENTATIVE (Outlook tentative invite)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-tentative@test
+SUMMARY:Outlook Tentative Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('does not change status when X-MICROSOFT-CDO-BUSYSTATUS is not TENTATIVE', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-busy@test
+SUMMARY:Outlook Busy Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
+    expect(events[0].status).toBe('CONFIRMED')
+  })
+
+  it('overrides STATUS:CONFIRMED to TENTATIVE when top-level PARTSTAT is TENTATIVE (Facebook tentative event)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:fb-tentative@test
+SUMMARY:Facebook Tentative Event
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+PARTSTAT:TENTATIVE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
   it('does not set tentative from PARTSTAT when there are multiple ATTENDEE lines (avoids false positives in multi-attendee meetings)', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT

@@ -55,7 +55,14 @@ const OutlookPlugin = {
       throw new Error(`Failed to fetch Outlook calendar: ${response.statusText}`)
     }
     const icsText = await response.text()
-    const rawEvents = parseICSData(icsText, this.id)
+    const rawEvents = parseICSData(icsText, this.id, {
+      // Outlook always exports STATUS:CONFIRMED; the proprietary
+      // X-MICROSOFT-CDO-BUSYSTATUS property carries the true busy state.
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
     const events = expandEvents(rawEvents, start, end)
     return events.filter((e) => e.end >= start && e.start <= end)
   },

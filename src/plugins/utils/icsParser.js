@@ -593,9 +593,14 @@ export function expandEvents(events, rangeStart, rangeEnd) {
  *
  * @param {string} icsText  - Raw ICS/iCalendar text
  * @param {string} sourceId - Plugin ID to tag each event with
+ * @param {object} [options]
+ * @param {function} [options.resolveStatus] - Optional vendor-specific status override.
+ *   Called as `resolveStatus(status, getProp)` where `getProp(name)` returns the
+ *   uppercased string value of any raw VEVENT property.  Return the desired status
+ *   string or the unchanged `status` argument to keep the default.
  * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, startTzid?, floating?}>}
  */
-export function parseICSData(icsText, sourceId) {
+export function parseICSData(icsText, sourceId, options = {}) {
   const preprocessed = preprocessICS(icsText)
 
   let jcal
@@ -652,6 +657,18 @@ export function parseICSData(icsText, sourceId) {
     // We only infer tentative from PARTSTAT for single-attendee events to avoid
     // false positives in multi-attendee meetings.
     let status = rawStatus
+
+    // Allow each plugin to apply vendor-specific status overrides by passing
+    // options.resolveStatus(currentStatus, getProp) to parseICSData.
+    if (typeof options.resolveStatus === 'function') {
+      const getProp = (name) =>
+        (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
+      const resolvedStatus = options.resolveStatus(status, getProp)
+      if (typeof resolvedStatus === 'string') {
+        status = resolvedStatus
+      }
+    }
+
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')
       if (attendeeProps.length === 1) {
