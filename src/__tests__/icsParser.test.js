@@ -209,6 +209,22 @@ END:VCALENDAR`
     expect(events[0].status).toBe('TENTATIVE')
   })
 
+  it('sets status to TENTATIVE when ATTENDEE PARTSTAT has surrounding whitespace (e.g. PARTSTAT= TENTATIVE)', () => {
+    // Some ICS generators emit PARTSTAT= TENTATIVE (space before value).
+    // .trim() is required so the padded value still matches 'TENTATIVE'.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:fb-partstat-ws@test
+SUMMARY:Whitespace PARTSTAT Event
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT= TENTATIVE;CN=Test User:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
   it('does not override explicit STATUS with ATTENDEE PARTSTAT', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
