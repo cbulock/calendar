@@ -443,6 +443,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
   }
 
   const SAFETY_CAP = 10000
+  const rangeEndMs = dayjs(rangeEnd).valueOf()
   for (let iter = 0; iter < SAFETY_CAP; iter++) {
     if (maxCount !== null && count >= maxCount) break
     if (p.FREQ === 'WEEKLY' && byDay && byDay.length > 0) {
@@ -452,7 +453,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
       // we don't exit the loop before generating earlier-in-week BYDAY
       // candidates that are still within the range/UNTIL window.
       const weekSunday = cursor.subtract(cursor.day(), 'day')
-      if (weekSunday.valueOf() > dayjs(rangeEnd).valueOf()) break
+      if (weekSunday.valueOf() > rangeEndMs) break
       if (until && adjustForDST(weekSunday) > until) break
     } else {
       // For all other frequencies: cursor IS the candidate date. Apply the
@@ -460,7 +461,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
       // the raw cursor to overshoot UNTIL by one hour and drop the final
       // occurrence prematurely.
       if (until && adjustForDST(cursor) > until) break
-      if (cursor.valueOf() > dayjs(rangeEnd).valueOf()) break
+      if (cursor.valueOf() > rangeEndMs) break
     }
 
     // Collect candidate occurrence start times for this iteration

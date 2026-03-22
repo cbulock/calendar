@@ -1,10 +1,15 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
+import dayjsTimezone from 'dayjs/plugin/timezone.js'
+import utc from 'dayjs/plugin/utc.js'
 import EventItem from '../components/EventItem.vue'
 import EventModal from '../components/EventModal.vue'
 import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone, getTodayInTimezone, midnightInTimezone } from '../composables/useTimezone.js'
+
+dayjs.extend(utc)
+dayjs.extend(dayjsTimezone)
 
 const { events, loading, error, fetchEvents, loadSources, enabledSources, sources } = useCalendar()
 const { timezone } = useTimezone()
@@ -70,7 +75,7 @@ function eventsForDay(dayStart, dayEnd) {
 const todayParts = computed(() => todayInTZ.value)
 
 function isToday(dayStart) {
-  const d = dayjs(dayStart)
+  const d = dayjs(dayStart).tz(timezone.value)
   const t = todayParts.value
   return d.year() === t.year && d.month() === t.month && d.date() === t.day
 }

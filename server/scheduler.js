@@ -116,9 +116,11 @@ export function getStatus() {
  */
 export function getCachedEvents(start, end) {
   if (!start || !end) return { ..._cache }
+  const startMs = dayjs(start).valueOf()
+  const endMs = dayjs(end).valueOf()
   return {
     ..._cache,
-    events: _cache.events.filter((e) => dayjs(e.end).valueOf() >= dayjs(start).valueOf() && dayjs(e.start).valueOf() <= dayjs(end).valueOf()),
+    events: _cache.events.filter((e) => dayjs(e.end).valueOf() >= startMs && dayjs(e.start).valueOf() <= endMs),
   }
 }
 
