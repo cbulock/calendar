@@ -1,4 +1,5 @@
 <script setup>
+import dayjs from 'dayjs'
 import { useTimezone } from '../composables/useTimezone.js'
 
 const props = defineProps({
@@ -33,7 +34,7 @@ function formatTime(date) {
 
 function formatDuration(start, end) {
   if (!start || !end) return ''
-  const ms = new Date(end) - new Date(start)
+  const ms = dayjs(end).diff(dayjs(start), 'millisecond')
   if (!Number.isFinite(ms) || ms <= 0) return ''
   const totalMinutes = Math.max(1, Math.floor(ms / 60_000))
   const hours = Math.floor(totalMinutes / 60)

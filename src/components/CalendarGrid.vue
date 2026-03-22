@@ -50,9 +50,9 @@ const monthLabel= computed(() => {
  * Each cell: { date: Date|null, isCurrentMonth: boolean, events: [] }
  */
 const grid = computed(() => {
-  const firstDay = new Date(props.year, props.month, 1)
-  const lastDay = new Date(props.year, props.month + 1, 0)
-  const startOffset = firstDay.getDay() // 0=Sun
+  const firstOfMonth = dayjs(new Date(props.year, props.month, 1))
+  const startOffset = firstOfMonth.day() // 0=Sun
+  const daysInMonth = firstOfMonth.daysInMonth()
 
   const cells = []
 
@@ -70,7 +70,7 @@ const grid = computed(() => {
   }
 
   // Days in this month
-  for (let d = 1; d <= lastDay.getDate(); d++) {
+  for (let d = 1; d <= daysInMonth; d++) {
     cells.push({
       year: props.year,
       month: props.month,
@@ -102,15 +102,16 @@ const grid = computed(() => {
   for (const cell of cells) {
     const cellStart = midnightInTimezone(cell.year, cell.month, cell.day, props.timezone)
     const cellEnd = midnightInTimezone(cell.year, cell.month, cell.day + 1, props.timezone)
-    const utcCellStart = new Date(Date.UTC(cell.year, cell.month, cell.day))
-    const utcCellEnd = new Date(Date.UTC(cell.year, cell.month, cell.day + 1))
+    // Use Date.UTC as a numeric utility (handles day overflow) then wrap with dayjs.utc
+    const utcCellStart = dayjs.utc(Date.UTC(cell.year, cell.month, cell.day)).toDate()
+    const utcCellEnd = dayjs.utc(Date.UTC(cell.year, cell.month, cell.day + 1)).toDate()
     cell.events = props.events.filter((e) => {
-      const evtStart = new Date(e.start)
-      const evtEnd = e.end ? new Date(e.end) : evtStart
+      const evtStart = dayjs(e.start)
+      const evtEnd = e.end ? dayjs(e.end) : evtStart
       if (e.floating) {
-        return evtStart < utcCellEnd && evtEnd > utcCellStart
+        return evtStart.isBefore(utcCellEnd) && evtEnd.isAfter(utcCellStart)
       }
-      return evtStart < cellEnd && evtEnd > cellStart
+      return evtStart.isBefore(cellEnd) && evtEnd.isAfter(cellStart)
     })
   }
 

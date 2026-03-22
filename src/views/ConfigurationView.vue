@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import dayjs from 'dayjs'
 import { getAllPlugins } from '../plugins/index.js'
 import PluginCard from '../components/PluginCard.vue'
 import { useCalendar } from '../composables/useCalendar.js'
@@ -25,7 +26,7 @@ async function loadStatus() {
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null
-  const diff = Date.now() - new Date(isoString).getTime()
+  const diff = dayjs().diff(dayjs(isoString), 'millisecond')
   const minutes = Math.floor(diff / 60_000)
   if (minutes < 1) return 'just now'
   if (minutes === 1) return '1 minute ago'

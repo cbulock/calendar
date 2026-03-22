@@ -58,17 +58,18 @@ function setTimezone(tz) {
  * @returns {Date}
  */
 export function midnightInTimezone(year, month, day, tz) {
-  // Use Date.UTC to resolve overflow/underflow in pure calendar arithmetic so that
-  // host-local timezone/DST transitions do not affect the resolved calendar date.
-  const resolved = new Date(Date.UTC(year, month, day))
-  const ry = resolved.getUTCFullYear()
-  const rm = String(resolved.getUTCMonth() + 1).padStart(2, '0')
-  const rd = String(resolved.getUTCDate()).padStart(2, '0')
+  // Date.UTC() resolves overflow/underflow in calendar arithmetic (e.g. month 13 or day 0)
+  // so that host-local timezone/DST transitions do not affect the resolved calendar date.
+  // dayjs.utc() wraps the resulting numeric timestamp for chainable accessor methods.
+  const resolved = dayjs.utc(Date.UTC(year, month, day))
+  const ry = resolved.year()
+  const rm = String(resolved.month() + 1).padStart(2, '0')
+  const rd = String(resolved.date()).padStart(2, '0')
   try {
     return dayjs.tz(`${ry}-${rm}-${rd}T00:00:00`, tz).toDate()
   } catch {
     // Invalid/unsupported timezone — fall back to UTC midnight
-    return new Date(Date.UTC(ry, parseInt(rm) - 1, parseInt(rd)))
+    return resolved.toDate()
   }
 }
 

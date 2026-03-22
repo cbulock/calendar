@@ -15,6 +15,7 @@
  */
 
 import express from 'express'
+import dayjs from 'dayjs'
 import { loadSources, saveSources } from './storage.js'
 import { startScheduler, getCachedEvents, refresh, getStatus } from './scheduler.js'
 
@@ -111,13 +112,13 @@ app.get('/api/events', (req, res) => {
     return res.status(400).json({ error: 'start and end query parameters are required.' })
   }
 
-  const startDate = new Date(start)
-  const endDate = new Date(end)
-  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+  const startDate = dayjs(start)
+  const endDate = dayjs(end)
+  if (!startDate.isValid() || !endDate.isValid()) {
     return res.status(400).json({ error: 'start and end must be valid ISO date strings.' })
   }
 
-  const { events, errors, lastRefreshed } = getCachedEvents(startDate, endDate)
+  const { events, errors, lastRefreshed } = getCachedEvents(startDate.toDate(), endDate.toDate())
   res.json({ events, errors, lastRefreshed })
 })
 

@@ -11,6 +11,7 @@
  * (default 15 minutes, overridable via REFRESH_INTERVAL_MS env var).
  */
 
+import dayjs from 'dayjs'
 import { loadSources } from './storage.js'
 import { getPlugin } from './plugins/index.js'
 
@@ -52,11 +53,9 @@ export async function refresh() {
   if (_refreshing) return
   _refreshing = true
   try {
-    const now = new Date()
-    const start = new Date(now)
-    start.setDate(start.getDate() - PREFETCH_PAST_DAYS)
-    const end = new Date(now)
-    end.setDate(end.getDate() + PREFETCH_FUTURE_DAYS)
+    const now = dayjs()
+    const start = now.subtract(PREFETCH_PAST_DAYS, 'day').toDate()
+    const end = now.add(PREFETCH_FUTURE_DAYS, 'day').toDate()
 
     const sources = loadSources().filter((s) => s.enabled !== false)
     const dateRange = { start, end }
@@ -79,7 +78,7 @@ export async function refresh() {
       }),
     )
 
-    events.sort((a, b) => new Date(a.start) - new Date(b.start))
+    events.sort((a, b) => dayjs(a.start).valueOf() - dayjs(b.start).valueOf())
 
     _cache = { events, errors, lastRefreshed: new Date() }
 
@@ -102,7 +101,7 @@ export function getStatus() {
   return {
     lastRefreshed: _cache.lastRefreshed ? _cache.lastRefreshed.toISOString() : null,
     nextRefreshAt: _intervalHandle && _cache.lastRefreshed
-      ? new Date(_cache.lastRefreshed.getTime() + REFRESH_INTERVAL_MS).toISOString()
+      ? dayjs(_cache.lastRefreshed).add(REFRESH_INTERVAL_MS, 'millisecond').toISOString()
       : null,
     sourceCount: sources.filter((s) => s.enabled !== false).length,
     errorCount: _cache.errors.length,
@@ -117,9 +116,11 @@ export function getStatus() {
  */
 export function getCachedEvents(start, end) {
   if (!start || !end) return { ..._cache }
+  const startMs = dayjs(start).valueOf()
+  const endMs = dayjs(end).valueOf()
   return {
     ..._cache,
-    events: _cache.events.filter((e) => new Date(e.end) >= start && new Date(e.start) <= end),
+    events: _cache.events.filter((e) => dayjs(e.end).valueOf() >= startMs && dayjs(e.start).valueOf() <= endMs),
   }
 }
 
