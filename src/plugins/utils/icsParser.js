@@ -660,10 +660,13 @@ export function parseICSData(icsText, sourceId, options = {}) {
 
     // Allow each plugin to apply vendor-specific status overrides by passing
     // options.resolveStatus(currentStatus, getProp) to parseICSData.
-    if (options.resolveStatus) {
+    if (typeof options.resolveStatus === 'function') {
       const getProp = (name) =>
         (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
-      status = options.resolveStatus(status, getProp)
+      const resolvedStatus = options.resolveStatus(status, getProp)
+      if (typeof resolvedStatus === 'string') {
+        status = resolvedStatus
+      }
     }
 
     if (!status) {
