@@ -593,9 +593,14 @@ export function expandEvents(events, rangeStart, rangeEnd) {
  *
  * @param {string} icsText  - Raw ICS/iCalendar text
  * @param {string} sourceId - Plugin ID to tag each event with
+ * @param {object} [options]
+ * @param {function} [options.resolveStatus] - Optional vendor-specific status override.
+ *   Called as `resolveStatus(status, getProp)` where `getProp(name)` returns the
+ *   uppercased string value of any raw VEVENT property.  Return the desired status
+ *   string or the unchanged `status` argument to keep the default.
  * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, startTzid?, floating?}>}
  */
-export function parseICSData(icsText, sourceId) {
+export function parseICSData(icsText, sourceId, options = {}) {
   const preprocessed = preprocessICS(icsText)
 
   let jcal
@@ -653,17 +658,13 @@ export function parseICSData(icsText, sourceId) {
     // false positives in multi-attendee meetings.
     let status = rawStatus
 
-    // Outlook exports STATUS:CONFIRMED even for tentative meetings; the
-    // proprietary X-MICROSOFT-CDO-BUSYSTATUS property carries the true state.
-    const cdoBusyStatus = (vevent.getFirstPropertyValue('x-microsoft-cdo-busystatus') || '').trim().toUpperCase()
-    if (cdoBusyStatus === 'TENTATIVE') status = 'TENTATIVE'
-
-    // Some providers (e.g. Facebook) emit a top-level PARTSTAT:TENTATIVE
-    // property on the VEVENT alongside STATUS:CONFIRMED to indicate the user's
-    // tentative acceptance.  This is distinct from PARTSTAT as a parameter on
-    // an ATTENDEE line (handled below).
-    const topLevelPartstat = (vevent.getFirstPropertyValue('partstat') || '').trim().toUpperCase()
-    if (topLevelPartstat === 'TENTATIVE') status = 'TENTATIVE'
+    // Allow each plugin to apply vendor-specific status overrides by passing
+    // options.resolveStatus(currentStatus, getProp) to parseICSData.
+    if (options.resolveStatus) {
+      const getProp = (name) =>
+        (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
+      status = options.resolveStatus(status, getProp)
+    }
 
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')

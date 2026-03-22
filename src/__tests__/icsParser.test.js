@@ -265,7 +265,12 @@ STATUS:CONFIRMED
 X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE
 END:VEVENT
 END:VCALENDAR`
-    const events = parseICSData(ics, 'test-source')
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
     expect(events[0].status).toBe('TENTATIVE')
   })
 
@@ -280,7 +285,12 @@ STATUS:CONFIRMED
 X-MICROSOFT-CDO-BUSYSTATUS:BUSY
 END:VEVENT
 END:VCALENDAR`
-    const events = parseICSData(ics, 'test-source')
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
     expect(events[0].status).toBe('CONFIRMED')
   })
 
@@ -295,7 +305,12 @@ STATUS:CONFIRMED
 PARTSTAT:TENTATIVE
 END:VEVENT
 END:VCALENDAR`
-    const events = parseICSData(ics, 'test-source')
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
     expect(events[0].status).toBe('TENTATIVE')
   })
 
