@@ -92,9 +92,10 @@ async function validateFetchUrl(url) {
  * @param {object} config - Source configuration (must include `icsUrl`)
  * @param {{ start: Date, end: Date }} dateRange
  * @param {string} sourceId
+ * @param {object} [options] - Passed through to parseICSData (e.g. resolveStatus)
  * @returns {Promise<object[]>} Filtered events within the date range
  */
-async function fetchICSEvents(config, dateRange, sourceId) {
+async function fetchICSEvents(config, dateRange, sourceId, options = {}) {
   const { start, end } = dateRange
   const fetchUrl = config.icsUrl.replace(/^webcal:/i, 'https:')
   await validateFetchUrl(fetchUrl)
@@ -103,7 +104,7 @@ async function fetchICSEvents(config, dateRange, sourceId) {
     throw new Error(`Failed to fetch calendar (HTTP ${response.status})`)
   }
   const icsText = await response.text()
-  const rawEvents = parseICSData(icsText, sourceId)
+  const rawEvents = parseICSData(icsText, sourceId, options)
   const events = expandEvents(rawEvents, start, end)
   return events.filter((e) => e.end >= start && e.start <= end)
 }
@@ -133,6 +134,33 @@ export function getPlugin(id) {
 
 // Register built-in plugins
 registerPlugin({ id: 'proton-calendar', fetchEvents: fetchICSEvents })
-registerPlugin({ id: 'outlook', fetchEvents: fetchICSEvents })
-registerPlugin({ id: 'facebook-events', fetchEvents: fetchICSEvents })
+
+// Outlook always exports STATUS:CONFIRMED; the proprietary
+// X-MICROSOFT-CDO-BUSYSTATUS property carries the true busy state.
+registerPlugin({
+  id: 'outlook',
+  fetchEvents(config, dateRange, sourceId) {
+    return fetchICSEvents(config, dateRange, sourceId, {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
+  },
+})
+
+// Facebook emits a top-level PARTSTAT:TENTATIVE property on the VEVENT
+// (distinct from PARTSTAT as a parameter on an ATTENDEE line) alongside
+// STATUS:CONFIRMED to indicate tentative acceptance.
+registerPlugin({
+  id: 'facebook-events',
+  fetchEvents(config, dateRange, sourceId) {
+    return fetchICSEvents(config, dateRange, sourceId, {
+      resolveStatus(status, getProp) {
+        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
+        return status
+      },
+    })
+  },
+})
 
