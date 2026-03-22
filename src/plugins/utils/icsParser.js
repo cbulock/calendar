@@ -652,6 +652,19 @@ export function parseICSData(icsText, sourceId) {
     // We only infer tentative from PARTSTAT for single-attendee events to avoid
     // false positives in multi-attendee meetings.
     let status = rawStatus
+
+    // Outlook exports STATUS:CONFIRMED even for tentative meetings; the
+    // proprietary X-MICROSOFT-CDO-BUSYSTATUS property carries the true state.
+    const cdoBusyStatus = (vevent.getFirstPropertyValue('x-microsoft-cdo-busystatus') || '').trim().toUpperCase()
+    if (cdoBusyStatus === 'TENTATIVE') status = 'TENTATIVE'
+
+    // Some providers (e.g. Facebook) emit a top-level PARTSTAT:TENTATIVE
+    // property on the VEVENT alongside STATUS:CONFIRMED to indicate the user's
+    // tentative acceptance.  This is distinct from PARTSTAT as a parameter on
+    // an ATTENDEE line (handled below).
+    const topLevelPartstat = (vevent.getFirstPropertyValue('partstat') || '').trim().toUpperCase()
+    if (topLevelPartstat === 'TENTATIVE') status = 'TENTATIVE'
+
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')
       if (attendeeProps.length === 1) {
