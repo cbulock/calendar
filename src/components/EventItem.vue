@@ -104,6 +104,7 @@ function formatDuration(start, end) {
 
 .event-item--tentative {
   border-style: dashed;
+  opacity: 0.65;
 }
 
 .event-item--tentative .event-item__title {
