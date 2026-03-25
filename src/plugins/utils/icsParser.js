@@ -669,6 +669,11 @@ export function parseICSData(icsText, sourceId, options = {}) {
       }
     }
 
+    // A plugin's resolveStatus may map a vendor-specific property to CANCELLED
+    // (e.g. Outlook X-MICROSOFT-CDO-BUSYSTATUS:FREE).  Skip those events the
+    // same way we skip events with a raw STATUS:CANCELLED value.
+    if (status === 'CANCELLED') continue
+
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')
       if (attendeeProps.length === 1) {
