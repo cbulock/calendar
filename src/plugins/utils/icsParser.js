@@ -665,7 +665,7 @@ export function parseICSData(icsText, sourceId, options = {}) {
         (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
       const resolvedStatus = options.resolveStatus(status, getProp)
       if (typeof resolvedStatus === 'string') {
-        status = resolvedStatus
+        status = resolvedStatus.trim().toUpperCase()
       }
     }
 
