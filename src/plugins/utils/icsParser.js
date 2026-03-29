@@ -665,9 +665,14 @@ export function parseICSData(icsText, sourceId, options = {}) {
         (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
       const resolvedStatus = options.resolveStatus(status, getProp)
       if (typeof resolvedStatus === 'string') {
-        status = resolvedStatus
+        status = resolvedStatus.trim().toUpperCase()
       }
     }
+
+    // A plugin's resolveStatus may map a vendor-specific property to CANCELLED
+    // (e.g. Outlook X-MICROSOFT-CDO-BUSYSTATUS:FREE).  Skip those events the
+    // same way we skip events with a raw STATUS:CANCELLED value.
+    if (status === 'CANCELLED') continue
 
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')

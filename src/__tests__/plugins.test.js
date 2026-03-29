@@ -110,6 +110,14 @@ describe('Outlook Plugin', () => {
     const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
     expect(events[0].status).toBe('CONFIRMED')
   })
+
+  it('filters out events where X-MICROSOFT-CDO-BUSYSTATUS is FREE (Outlook cancelled meeting)', async () => {
+    const ics = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:outlook-cancelled@test\r\nSUMMARY:Cancelled\r\nDTSTART:20250401T140000Z\r\nDTEND:20250401T150000Z\r\nSTATUS:CONFIRMED\r\nX-MICROSOFT-CDO-BUSYSTATUS:FREE\r\nEND:VEVENT\r\nEND:VCALENDAR`
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2025-04-01T00:00:00Z'), end: new Date('2025-04-30T00:00:00Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
+  })
 })
 
 describe('Facebook Events Plugin', () => {

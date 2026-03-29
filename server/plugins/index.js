@@ -142,7 +142,9 @@ registerPlugin({
   fetchEvents(config, dateRange, sourceId) {
     return fetchICSEvents(config, dateRange, sourceId, {
       resolveStatus(status, getProp) {
-        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        const busyStatus = getProp('x-microsoft-cdo-busystatus')
+        if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
+        if (busyStatus === 'FREE') return 'CANCELLED'
         return status
       },
     })

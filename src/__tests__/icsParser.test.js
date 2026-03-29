@@ -274,6 +274,28 @@ END:VCALENDAR`
     expect(events[0].status).toBe('TENTATIVE')
   })
 
+  it('filters out events when resolveStatus returns CANCELLED (Outlook cancelled via X-MICROSOFT-CDO-BUSYSTATUS:FREE)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:outlook-cancelled@test
+SUMMARY:Cancelled Outlook Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+X-MICROSOFT-CDO-BUSYSTATUS:FREE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        const busyStatus = getProp('x-microsoft-cdo-busystatus')
+        if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
+        if (busyStatus === 'FREE') return 'CANCELLED'
+        return status
+      },
+    })
+    expect(events).toHaveLength(0)
+  })
+
   it('does not change status when X-MICROSOFT-CDO-BUSYSTATUS is not TENTATIVE', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT

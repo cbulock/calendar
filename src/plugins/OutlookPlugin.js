@@ -59,7 +59,9 @@ const OutlookPlugin = {
       // Outlook always exports STATUS:CONFIRMED; the proprietary
       // X-MICROSOFT-CDO-BUSYSTATUS property carries the true busy state.
       resolveStatus(status, getProp) {
-        if (getProp('x-microsoft-cdo-busystatus') === 'TENTATIVE') return 'TENTATIVE'
+        const busyStatus = getProp('x-microsoft-cdo-busystatus')
+        if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
+        if (busyStatus === 'FREE') return 'CANCELLED'
         return status
       },
     })
