@@ -562,6 +562,24 @@ function expandRRule(event, rangeStart, rangeEnd) {
 }
 
 /**
+ * Deduplicate a list of calendar events by merging events that share the same
+ * title, start time, and end time into a single entry.  The first occurrence
+ * encountered is kept; subsequent duplicates are dropped.
+ *
+ * @param {object[]} events - Flat list of event objects (each must have title, start, end)
+ * @returns {object[]} New array with duplicates removed
+ */
+export function deduplicateEvents(events) {
+  const seen = new Set()
+  return events.filter((event) => {
+    const key = `${event.title}|${dayjs(event.start).valueOf()}|${dayjs(event.end).valueOf()}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/**
  * Expand any recurring events in the list into individual occurrences within
  * [rangeStart, rangeEnd]. Non-recurring events are passed through as-is.
  *

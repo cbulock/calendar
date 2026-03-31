@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseICSData, expandEvents } from '../plugins/utils/icsParser.js'
+import { parseICSData, expandEvents, deduplicateEvents } from '../plugins/utils/icsParser.js'
 
 const SAMPLE_ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -1031,6 +1031,70 @@ END:VCALENDAR`
     expect(result[0].start.toISOString()).toBe('2025-03-21T18:30:00.000Z')
     expect(result[1].start.toISOString()).toBe('2025-04-18T18:30:00.000Z')
     expect(result[2].start.toISOString()).toBe('2025-05-16T18:30:00.000Z')
+  })
+})
+
+describe('deduplicateEvents', () => {
+  const start = new Date('2025-03-15T10:00:00Z')
+  const end = new Date('2025-03-15T11:00:00Z')
+
+  function makeEvent(overrides = {}) {
+    return {
+      id: 'event-1',
+      title: 'Team Meeting',
+      start,
+      end,
+      allDay: false,
+      source: 'source-a',
+      status: '',
+      description: '',
+      location: '',
+      ...overrides,
+    }
+  }
+
+  it('returns the same list when there are no duplicates', () => {
+    const events = [
+      makeEvent({ title: 'Meeting A', start: new Date('2025-03-15T10:00:00Z'), end: new Date('2025-03-15T11:00:00Z') }),
+      makeEvent({ title: 'Meeting B', start: new Date('2025-03-15T12:00:00Z'), end: new Date('2025-03-15T13:00:00Z') }),
+    ]
+    expect(deduplicateEvents(events)).toHaveLength(2)
+  })
+
+  it('removes an exact duplicate (same title, start, end)', () => {
+    const event = makeEvent()
+    const duplicate = makeEvent({ source: 'source-b' })
+    const result = deduplicateEvents([event, duplicate])
+    expect(result).toHaveLength(1)
+    expect(result[0].source).toBe('source-a')
+  })
+
+  it('keeps events with the same title but different times', () => {
+    const first = makeEvent({ start: new Date('2025-03-15T10:00:00Z'), end: new Date('2025-03-15T11:00:00Z') })
+    const second = makeEvent({ start: new Date('2025-03-16T10:00:00Z'), end: new Date('2025-03-16T11:00:00Z') })
+    expect(deduplicateEvents([first, second])).toHaveLength(2)
+  })
+
+  it('keeps events with the same time but different titles', () => {
+    const first = makeEvent({ title: 'Meeting A' })
+    const second = makeEvent({ title: 'Meeting B' })
+    expect(deduplicateEvents([first, second])).toHaveLength(2)
+  })
+
+  it('handles multiple duplicates across several sources', () => {
+    const event = makeEvent()
+    const events = [
+      makeEvent({ source: 'source-a' }),
+      makeEvent({ source: 'source-b' }),
+      makeEvent({ source: 'source-c' }),
+    ]
+    const result = deduplicateEvents(events)
+    expect(result).toHaveLength(1)
+    expect(result[0].source).toBe('source-a')
+  })
+
+  it('returns an empty array when given an empty array', () => {
+    expect(deduplicateEvents([])).toEqual([])
   })
 })
 
