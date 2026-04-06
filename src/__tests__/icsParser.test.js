@@ -1082,7 +1082,6 @@ describe('deduplicateEvents', () => {
   })
 
   it('handles multiple duplicates across several sources', () => {
-    const event = makeEvent()
     const events = [
       makeEvent({ source: 'source-a' }),
       makeEvent({ source: 'source-b' }),
