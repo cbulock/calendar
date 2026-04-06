@@ -14,6 +14,7 @@
 import dayjs from 'dayjs'
 import { loadSources } from './storage.js'
 import { getPlugin } from './plugins/index.js'
+import { deduplicateEvents } from './icsParser.js'
 
 /** How far back (in days) to pre-fetch events. */
 const PREFETCH_PAST_DAYS = 90
@@ -79,13 +80,14 @@ export async function refresh() {
     )
 
     events.sort((a, b) => dayjs(a.start).valueOf() - dayjs(b.start).valueOf())
+    const dedupedEvents = deduplicateEvents(events)
 
-    _cache = { events, errors, lastRefreshed: new Date() }
+    _cache = { events: dedupedEvents, errors, lastRefreshed: new Date() }
 
     if (errors.length > 0) {
       console.warn(`[scheduler] Refresh completed with ${errors.length} error(s):`, errors)
     } else {
-      console.log(`[scheduler] Refreshed ${events.length} event(s) from ${sources.length} source(s) at ${_cache.lastRefreshed.toISOString()}`)
+      console.log(`[scheduler] Refreshed ${dedupedEvents.length} event(s) (${events.length - dedupedEvents.length} duplicate(s) removed) from ${sources.length} source(s) at ${_cache.lastRefreshed.toISOString()}`)
     }
   } finally {
     _refreshing = false
