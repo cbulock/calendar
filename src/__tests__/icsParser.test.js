@@ -557,6 +557,30 @@ END:VCALENDAR`
     expect(events[0].exdates[0]).toBeInstanceOf(Date)
   })
 
+  it('parses RECURRENCE-ID on an override VEVENT', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:recurring-series@test
+SUMMARY:Weekly Meeting
+DTSTART:20250106T100000Z
+DTEND:20250106T110000Z
+RRULE:FREQ=WEEKLY
+END:VEVENT
+BEGIN:VEVENT
+UID:recurring-series@test
+SUMMARY:Weekly Meeting (rescheduled)
+RECURRENCE-ID:20250113T100000Z
+DTSTART:20250113T140000Z
+DTEND:20250113T150000Z
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    const override = events.find((e) => e.recurrenceId)
+    expect(override).toBeDefined()
+    expect(override.recurrenceId).toBeInstanceOf(Date)
+    expect(override.recurrenceId.toISOString()).toBe('2025-01-13T10:00:00.000Z')
+  })
+
   it('unfolds lines with LF-only line endings', () => {
     // Some ICS generators use LF + space for folding instead of CRLF + space
     const ics =
@@ -847,6 +871,77 @@ describe('expandEvents', () => {
     expect(starts).toContain('2025-01-06T10:00:00.000Z')
   })
 
+  it('suppresses the original occurrence when a RECURRENCE-ID override is present', () => {
+    // The Jan 13 occurrence is rescheduled to 14:00; the original 10:00 slot must
+    // not appear in the results.
+    const baseStart = new Date('2025-01-06T10:00:00Z') // Monday
+    const baseEnd   = new Date('2025-01-06T11:00:00Z')
+    const overrideOriginal = new Date('2025-01-13T10:00:00Z') // original slot
+    const overrideStart    = new Date('2025-01-13T14:00:00Z') // rescheduled time
+    const overrideEnd      = new Date('2025-01-13T15:00:00Z')
+    const events = [
+      {
+        id: 'weekly-series@test',
+        title: 'Weekly Meeting',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY',
+      },
+      {
+        id: 'weekly-series@test',
+        title: 'Weekly Meeting (rescheduled)',
+        start: overrideStart,
+        end: overrideEnd,
+        allDay: false,
+        source: 'test',
+        recurrenceId: overrideOriginal,
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    const starts = result.map((e) => e.start.toISOString())
+
+    // Original occurrence at 10:00 must be suppressed
+    expect(starts).not.toContain('2025-01-13T10:00:00.000Z')
+    // Rescheduled occurrence at 14:00 must appear
+    expect(starts).toContain('2025-01-13T14:00:00.000Z')
+    // Other occurrences of the series must still appear
+    expect(starts).toContain('2025-01-06T10:00:00.000Z')
+    expect(starts).toContain('2025-01-20T10:00:00.000Z')
+  })
+
+  it('does not include recurrenceId on the emitted override event, and assigns a unique id', () => {
+    const recurrenceId = new Date('2025-01-13T10:00:00Z')
+    const events = [
+      {
+        id: 'series@test',
+        title: 'Meeting',
+        start: new Date('2025-01-06T10:00:00Z'),
+        end: new Date('2025-01-06T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY',
+      },
+      {
+        id: 'series@test',
+        title: 'Meeting (moved)',
+        start: new Date('2025-01-13T14:00:00Z'),
+        end: new Date('2025-01-13T15:00:00Z'),
+        allDay: false,
+        source: 'test',
+        recurrenceId,
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    const override = result.find((e) => e.start.toISOString() === '2025-01-13T14:00:00.000Z')
+    expect(override).toBeDefined()
+    expect(override.recurrenceId).toBeUndefined()
+    // ID must be unique and not clash with the series base id
+    expect(override.id).toBe(`series@test__occ__${recurrenceId.valueOf()}`)
+    expect(override.id).not.toBe('series@test')
+  })
+
   it('handles INTERVAL > 1', () => {
     const baseStart = new Date('2025-01-01T09:00:00Z')
     const baseEnd = new Date('2025-01-01T09:30:00Z')
@@ -1031,6 +1126,46 @@ END:VCALENDAR`
     expect(result[0].start.toISOString()).toBe('2025-03-21T18:30:00.000Z')
     expect(result[1].start.toISOString()).toBe('2025-04-18T18:30:00.000Z')
     expect(result[2].start.toISOString()).toBe('2025-05-16T18:30:00.000Z')
+  })
+
+  it('integration: parseICSData + expandEvents suppresses overridden occurrence', () => {
+    // Full ICS round-trip: a weekly series where one occurrence is rescheduled.
+    const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:recurrence-id-integration@test
+SUMMARY:Weekly Standup
+DTSTART:20250106T100000Z
+DTEND:20250106T110000Z
+RRULE:FREQ=WEEKLY
+END:VEVENT
+BEGIN:VEVENT
+UID:recurrence-id-integration@test
+SUMMARY:Weekly Standup (rescheduled)
+RECURRENCE-ID:20250113T100000Z
+DTSTART:20250113T140000Z
+DTEND:20250113T150000Z
+END:VEVENT
+END:VCALENDAR`
+    const parsed = parseICSData(ics, 'test')
+    const result = expandEvents(
+      parsed,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2025-01-31T23:59:59Z'),
+    )
+    const starts = result.map((e) => e.start.toISOString())
+    // Original Jan 13 10:00 slot must not appear
+    expect(starts).not.toContain('2025-01-13T10:00:00.000Z')
+    // Rescheduled Jan 13 14:00 slot must appear
+    expect(starts).toContain('2025-01-13T14:00:00.000Z')
+    // Other weekly occurrences must appear
+    expect(starts).toContain('2025-01-06T10:00:00.000Z')
+    expect(starts).toContain('2025-01-20T10:00:00.000Z')
+    expect(starts).toContain('2025-01-27T10:00:00.000Z')
+    // Should not have any duplicates on Jan 13
+    const jan13Events = result.filter((e) => e.start.toISOString().startsWith('2025-01-13'))
+    expect(jan13Events).toHaveLength(1)
   })
 })
 

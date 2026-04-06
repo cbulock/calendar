@@ -227,7 +227,7 @@ function preprocessICS(icsText) {
   //    RFC 5545 names are case-insensitive, so match dtstart/dtend/exdate in any casing.
   //    Also check for an existing VALUE=DATE (or value=date) param case-insensitively to
   //    avoid adding a duplicate.
-  text = text.replace(/^(DTSTART|DTEND|EXDATE)([^:]*):(\d{8})\r?$/gim, (match, prop, params, date) => {
+  text = text.replace(/^(DTSTART|DTEND|EXDATE|RECURRENCE-ID)([^:]*):(\d{8})\r?$/gim, (match, prop, params, date) => {
     if (params.toUpperCase().includes('VALUE=DATE')) return match
     const cr = match.endsWith('\r') ? '\r' : ''
     return params
@@ -589,13 +589,45 @@ export function deduplicateEvents(events) {
  * @returns {object[]}
  */
 export function expandEvents(events, rangeStart, rangeEnd) {
+  // Build a map of uid → [recurrenceId Date] from override VEVENTs.
+  // An override VEVENT has the same UID as its parent series but carries a
+  // RECURRENCE-ID identifying the original occurrence it replaces.  We
+  // collect those dates so we can exclude them from the RRULE expansion.
+  const overridesByUid = new Map()
+  for (const event of events) {
+    if (event.recurrenceId) {
+      const existing = overridesByUid.get(event.id)
+      if (existing) {
+        existing.push(event.recurrenceId)
+      } else {
+        overridesByUid.set(event.id, [event.recurrenceId])
+      }
+    }
+  }
+
   const results = []
   for (const event of events) {
-    if (event.rrule) {
-      results.push(...expandRRule(event, rangeStart, rangeEnd))
+    if (event.recurrenceId) {
+      // Override/rescheduled occurrence — emit as a standalone event, not as
+      // part of the recurring series expansion.  Assign a unique ID derived
+      // from the series UID + original occurrence timestamp so multiple
+      // overrides on the same series don't share the same id (which would
+      // break Vue rendering keys).
+      // eslint-disable-next-line no-unused-vars
+      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, ...rest } = event
+      results.push({ ...rest, id: `${event.id}__occ__${dayjs(event.recurrenceId).valueOf()}` })
+    } else if (event.rrule) {
+      // If any occurrences of this series were rescheduled, merge their
+      // original DTSTART values into the exclusion set so expandRRule won't
+      // emit a duplicate alongside the override event.
+      const extraExdates = overridesByUid.get(event.id)
+      const expandable = extraExdates
+        ? { ...event, exdates: [...(event.exdates ?? []), ...extraExdates] }
+        : event
+      results.push(...expandRRule(expandable, rangeStart, rangeEnd))
     } else {
       // eslint-disable-next-line no-unused-vars
-      const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
+      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, ...rest } = event
       results.push(rest)
     }
   }
@@ -616,7 +648,7 @@ export function expandEvents(events, rangeStart, rangeEnd) {
  *   Called as `resolveStatus(status, getProp)` where `getProp(name)` returns the
  *   uppercased string value of any raw VEVENT property.  Return the desired status
  *   string or the unchanged `status` argument to keep the default.
- * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, startTzid?, floating?}>}
+ * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, startTzid?, floating?, recurrenceId?}>}
  */
 export function parseICSData(icsText, sourceId, options = {}) {
   const preprocessed = preprocessICS(icsText)
@@ -756,6 +788,17 @@ export function parseICSData(icsText, sourceId, options = {}) {
         }
       }
       if (exdates.length > 0) event.exdates = exdates
+    }
+
+    // RECURRENCE-ID — marks this VEVENT as an override of a specific occurrence
+    // in a recurring series with the same UID.  The value is the original DTSTART
+    // of the occurrence being replaced.
+    const recurrIdProp = vevent.getFirstProperty('recurrence-id')
+    if (recurrIdProp) {
+      const recurrIdVal = recurrIdProp.getFirstValue()
+      const recurrIdTzid = recurrIdProp.getParameter('tzid') ?? dtStartTzid
+      const recurrIdDate = icalTimeToDate(recurrIdVal, recurrIdTzid)
+      if (recurrIdDate) event.recurrenceId = recurrIdDate
     }
 
     events.push(event)
