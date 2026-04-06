@@ -792,7 +792,7 @@ export function parseICSData(icsText, sourceId, options = {}) {
     // of the occurrence being replaced.
     const recurrIdProp = vevent.getFirstProperty('recurrence-id')
     if (recurrIdProp) {
-      const recurrIdVal  = recurrIdProp.getFirstValue()
+      const recurrIdVal = recurrIdProp.getFirstValue()
       const recurrIdTzid = recurrIdProp.getParameter('tzid') ?? dtStartTzid
       const recurrIdDate = icalTimeToDate(recurrIdVal, recurrIdTzid)
       if (recurrIdDate) event.recurrenceId = recurrIdDate
