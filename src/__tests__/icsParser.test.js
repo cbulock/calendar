@@ -911,7 +911,8 @@ describe('expandEvents', () => {
     expect(starts).toContain('2025-01-20T10:00:00.000Z')
   })
 
-  it('does not include recurrenceId on the emitted override event', () => {
+  it('does not include recurrenceId on the emitted override event, and assigns a unique id', () => {
+    const recurrenceId = new Date('2025-01-13T10:00:00Z')
     const events = [
       {
         id: 'series@test',
@@ -929,13 +930,16 @@ describe('expandEvents', () => {
         end: new Date('2025-01-13T15:00:00Z'),
         allDay: false,
         source: 'test',
-        recurrenceId: new Date('2025-01-13T10:00:00Z'),
+        recurrenceId,
       },
     ]
     const result = expandEvents(events, rangeStart, rangeEnd)
     const override = result.find((e) => e.start.toISOString() === '2025-01-13T14:00:00.000Z')
     expect(override).toBeDefined()
     expect(override.recurrenceId).toBeUndefined()
+    // ID must be unique and not clash with the series base id
+    expect(override.id).toBe(`series@test__occ__${recurrenceId.valueOf()}`)
+    expect(override.id).not.toBe('series@test')
   })
 
   it('handles INTERVAL > 1', () => {

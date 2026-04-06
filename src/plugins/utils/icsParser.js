@@ -609,10 +609,13 @@ export function expandEvents(events, rangeStart, rangeEnd) {
   for (const event of events) {
     if (event.recurrenceId) {
       // Override/rescheduled occurrence — emit as a standalone event, not as
-      // part of the recurring series expansion.
+      // part of the recurring series expansion.  Assign a unique ID derived
+      // from the series UID + original occurrence timestamp so multiple
+      // overrides on the same series don't share the same id (which would
+      // break Vue rendering keys).
       // eslint-disable-next-line no-unused-vars
       const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, ...rest } = event
-      results.push(rest)
+      results.push({ ...rest, id: `${event.id}__occ__${dayjs(event.recurrenceId).valueOf()}` })
     } else if (event.rrule) {
       // If any occurrences of this series were rescheduled, merge their
       // original DTSTART values into the exclusion set so expandRRule won't
