@@ -14,7 +14,7 @@
 import dayjs from 'dayjs'
 import { loadSources } from './storage.js'
 import { getPlugin } from './plugins/index.js'
-import { deduplicateEvents } from '../src/plugins/utils/icsParser.js'
+import { deduplicateEvents } from './icsParser.js'
 
 /** How far back (in days) to pre-fetch events. */
 const PREFETCH_PAST_DAYS = 90
