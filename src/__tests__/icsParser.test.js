@@ -1053,7 +1053,7 @@ describe('deduplicateEvents', () => {
     }
   }
 
-  it('returns the same list when there are no duplicates', () => {
+  it('does not remove any events when there are no duplicates', () => {
     const events = [
       makeEvent({ title: 'Meeting A', start: new Date('2025-03-15T10:00:00Z'), end: new Date('2025-03-15T11:00:00Z') }),
       makeEvent({ title: 'Meeting B', start: new Date('2025-03-15T12:00:00Z'), end: new Date('2025-03-15T13:00:00Z') }),
