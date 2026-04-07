@@ -934,6 +934,14 @@ export function parseICSData(icsText, sourceId, options = {}) {
       if (recurrIdDate) event.recurrenceId = recurrIdDate
     }
 
+    // Skip cancelled events now that RECURRENCE-ID has been parsed.  A CANCELLED
+    // VEVENT *with* a RECURRENCE-ID represents a specific cancelled occurrence of
+    // a recurring series: expandEvents needs it to exclude that slot from the
+    // RRULE expansion.  A CANCELLED VEVENT without a RECURRENCE-ID is a
+    // whole-series or standalone cancellation and can be dropped entirely here,
+    // before the (more expensive) RDATE parsing below.
+    if (status === 'CANCELLED' && !event.recurrenceId) continue
+
     // RDATE — additional explicit recurrence dates (RFC 5545 § 3.8.5.2).
     // Like EXDATE, RDATE may appear on multiple property lines or hold
     // comma-separated values.  RDATE;VALUE=PERIOD is not supported; only the
@@ -955,14 +963,6 @@ export function parseICSData(icsText, sourceId, options = {}) {
       }
       if (rdates.length > 0) event.rdates = rdates
     }
-
-    // Skip cancelled events, but only after we have had a chance to parse the
-    // RECURRENCE-ID.  A CANCELLED VEVENT *with* a RECURRENCE-ID represents a
-    // specific cancelled occurrence of a recurring series: expandEvents needs to
-    // see it so it can exclude that slot from the RRULE expansion.  A CANCELLED
-    // VEVENT without a RECURRENCE-ID is a whole-series or standalone cancellation
-    // and can be dropped entirely.
-    if (status === 'CANCELLED' && !event.recurrenceId) continue
 
     events.push(event)
   }
