@@ -326,7 +326,9 @@ function parseRRuleParams(rrule) {
  * Supports FREQ=DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL, UNTIL, and COUNT.
  * For FREQ=WEEKLY, BYDAY is supported (plain weekday codes).
  * For FREQ=MONTHLY, BYDAY is supported with optional positional prefixes
- * (e.g. "3FR" = third Friday, "-1MO" = last Monday, "MO" = every Monday).
+ * (e.g. "3FR" = third Friday, "-1MO" = last Monday, "MO" = every Monday);
+ * BYMONTHDAY is also supported (e.g. "15" = every 15th, "-1" = last day of month).
+ * For FREQ=YEARLY, BYMONTH (e.g. "7" = July) and BYMONTHDAY are supported.
  *
  * @param {object} event      - Base event object (must have start, end, rrule, exdates)
  * @param {Date}   rangeStart - Inclusive start of the requested window
@@ -373,6 +375,23 @@ function expandRRule(event, rangeStart, rangeEnd) {
     : null
   // Plain weekday array used by the WEEKLY branch (positional info not needed there).
   const byDay = byDayRules ? byDayRules.map((b) => b.weekday) : null
+
+  // Parse BYMONTHDAY values (comma-separated signed integers, e.g. "15" or "1,15" or "-1").
+  // Positive values are a day-of-month (1–31); negative values count from the end (-1 = last day).
+  const byMonthDayRules = p.BYMONTHDAY
+    ? p.BYMONTHDAY
+        .split(',')
+        .map((n) => parseInt(n.trim(), 10))
+        .filter((n) => !isNaN(n) && n !== 0)
+    : null
+
+  // Parse BYMONTH values (comma-separated month numbers, 1 = January … 12 = December).
+  const byMonthRules = p.BYMONTH
+    ? p.BYMONTH
+        .split(',')
+        .map((n) => parseInt(n.trim(), 10))
+        .filter((n) => !isNaN(n) && n >= 1 && n <= 12)
+    : null
 
   const duration = dayjs(event.end).diff(dayjs(event.start))
 
@@ -426,6 +445,17 @@ function expandRRule(event, rangeStart, rangeEnd) {
   // day-of-month (e.g. the 21st).
   if (p.FREQ === 'MONTHLY' && byDayRules && byDayRules.length > 0) {
     cursor = cursor.date(1)
+  }
+  // For MONTHLY+BYMONTHDAY (without BYDAY), also normalize to day 1 so that a
+  // BYMONTHDAY value earlier in the month than DTSTART is still emitted in the
+  // first month.
+  if (p.FREQ === 'MONTHLY' && byMonthDayRules && byMonthDayRules.length > 0 && !(byDayRules && byDayRules.length > 0)) {
+    cursor = cursor.date(1)
+  }
+  // For YEARLY+BYMONTH, normalize to January 1 of the start year so that every
+  // BYMONTH month within the same year can be evaluated as a candidate.
+  if (p.FREQ === 'YEARLY' && (byMonthRules || byMonthDayRules)) {
+    cursor = cursor.month(0).date(1)
   }
 
   // Fast-forward cursor for simple (non-BYDAY) daily/weekly rules to avoid
@@ -512,6 +542,52 @@ function expandRRule(event, rangeStart, rangeEnd) {
           // instant for timezone-aware events, or returns the UTC Date directly
           // for floating events.
           return targetDays.map((day) => adjustForDST(cursor.date(day)))
+        })
+        .filter((d) => d >= event.start) // never before the series start
+        .sort((a, b) => a - b)
+    } else if (p.FREQ === 'MONTHLY' && byMonthDayRules && byMonthDayRules.length > 0) {
+      // For MONTHLY + BYMONTHDAY, compute occurrence(s) on the specified day(s) of
+      // the month that cursor falls in.
+      // e.g. BYMONTHDAY=15 → 15th of every month; BYMONTHDAY=-1 → last day of month;
+      // BYMONTHDAY=1,15 → 1st and 15th.
+      // cursor is a dayjs UTC object (normalized to day 1 of the month above).
+      const daysInMonth = cursor.daysInMonth()
+      candidates = byMonthDayRules
+        .flatMap((mday) => {
+          // Negative values count from the end of the month (-1 = last day).
+          const day = mday > 0 ? mday : daysInMonth + 1 + mday
+          if (day < 1 || day > daysInMonth) return []
+          return [adjustForDST(cursor.date(day))]
+        })
+        .filter((d) => d >= event.start) // never before the series start
+        .sort((a, b) => a - b)
+    } else if (p.FREQ === 'YEARLY' && (byMonthRules || byMonthDayRules)) {
+      // For YEARLY + BYMONTH and/or BYMONTHDAY, generate candidates for each
+      // specified month (defaulting to the month of DTSTART when BYMONTH is
+      // absent) on the specified day(s) of month (defaulting to the DTSTART
+      // day-of-month when BYMONTHDAY is absent).
+      // e.g. BYMONTH=7;BYMONTHDAY=4 → every July 4th
+      //      BYMONTH=1,7            → every Jan/Jul on the DTSTART day-of-month
+      //      BYMONTHDAY=25;BYMONTH=12 → every December 25th
+      // cursor is normalized to January 1 of the year being evaluated.
+      const startDayOfMonth = dayjs.utc(event.start).date()
+      const months = byMonthRules ?? [dayjs.utc(event.start).month() + 1] // 1-based
+      candidates = months
+        .flatMap((month) => {
+          const monthCursor = cursor.month(month - 1) // dayjs months are 0-based
+          const daysInMonth = monthCursor.date(1).daysInMonth()
+          if (byMonthDayRules) {
+            return byMonthDayRules.flatMap((mday) => {
+              const day = mday > 0 ? mday : daysInMonth + 1 + mday
+              if (day < 1 || day > daysInMonth) return []
+              return [adjustForDST(monthCursor.date(day))]
+            })
+          } else {
+            // No BYMONTHDAY → use the day-of-month from DTSTART (clamped to the
+            // month length, e.g. Feb 29 in a non-leap year becomes Feb 28).
+            const day = Math.min(startDayOfMonth, daysInMonth)
+            return [adjustForDST(monthCursor.date(day))]
+          }
         })
         .filter((d) => d >= event.start) // never before the series start
         .sort((a, b) => a - b)
@@ -614,7 +690,7 @@ export function expandEvents(events, rangeStart, rangeEnd) {
       // overrides on the same series don't share the same id (which would
       // break Vue rendering keys).
       // eslint-disable-next-line no-unused-vars
-      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, ...rest } = event
+      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, rdates: _rd, ...rest } = event
       results.push({ ...rest, id: `${event.id}__occ__${dayjs(event.recurrenceId).valueOf()}` })
     } else if (event.rrule) {
       // If any occurrences of this series were rescheduled, merge their
@@ -625,9 +701,38 @@ export function expandEvents(events, rangeStart, rangeEnd) {
         ? { ...event, exdates: [...(event.exdates ?? []), ...extraExdates] }
         : event
       results.push(...expandRRule(expandable, rangeStart, rangeEnd))
+      // Also emit any RDATE occurrences not already covered by the RRULE expansion.
+      if (event.rdates && event.rdates.length > 0) {
+        const exdateSet = new Set((expandable.exdates ?? []).map((d) => dayjs(d).valueOf()))
+        const duration = dayjs(event.end).diff(dayjs(event.start))
+        for (const rd of event.rdates) {
+          if (exdateSet.has(dayjs(rd).valueOf())) continue
+          const occEnd = dayjs(rd).add(duration, 'millisecond').toDate()
+          // eslint-disable-next-line no-unused-vars
+          const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, rdates: _rd, ...rest } = event
+          results.push({ ...rest, start: rd, end: occEnd, id: `${event.id}__occ__${dayjs(rd).valueOf()}` })
+        }
+      }
+    } else if (event.rdates && event.rdates.length > 0) {
+      // RDATE without RRULE: emit the base event (DTSTART occurrence) and each
+      // RDATE date as an additional occurrence.
+      const exdateSet = new Set((event.exdates ?? []).map((d) => dayjs(d).valueOf()))
+      // eslint-disable-next-line no-unused-vars
+      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, rdates: _rd, ...rest } = event
+      // Include the base DTSTART occurrence (unless it is excluded).
+      if (!exdateSet.has(dayjs(event.start).valueOf())) {
+        results.push(rest)
+      }
+      // Emit each RDATE as an additional occurrence.
+      const duration = dayjs(event.end).diff(dayjs(event.start))
+      for (const rd of event.rdates) {
+        if (exdateSet.has(dayjs(rd).valueOf())) continue
+        const occEnd = dayjs(rd).add(duration, 'millisecond').toDate()
+        results.push({ ...rest, start: rd, end: occEnd, id: `${event.id}__occ__${dayjs(rd).valueOf()}` })
+      }
     } else {
       // eslint-disable-next-line no-unused-vars
-      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, ...rest } = event
+      const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, rdates: _rd, ...rest } = event
       results.push(rest)
     }
   }
@@ -648,7 +753,7 @@ export function expandEvents(events, rangeStart, rangeEnd) {
  *   Called as `resolveStatus(status, getProp)` where `getProp(name)` returns the
  *   uppercased string value of any raw VEVENT property.  Return the desired status
  *   string or the unchanged `status` argument to keep the default.
- * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, startTzid?, floating?, recurrenceId?}>}
+ * @returns {Array<{id, title, start, end, allDay, description, location, status, source, rrule?, exdates?, rdates?, startTzid?, floating?, recurrenceId?}>}
  */
 export function parseICSData(icsText, sourceId, options = {}) {
   const preprocessed = preprocessICS(icsText)
@@ -698,7 +803,18 @@ export function parseICSData(icsText, sourceId, options = {}) {
 
     const start = icalTimeToDate(dtstart, dtStartTzid)
     let   end   = dtend ? icalTimeToDate(dtend, dtEndTzid) : null
-    // For all-day events with no DTEND, use the same date as the start
+    // When DTEND is absent, derive the end time from DURATION if present
+    // (RFC 5545 § 3.6.1 permits either DTEND or DURATION, but not both).
+    if (!end) {
+      const durationProp = vevent.getFirstProperty('duration')
+      if (durationProp) {
+        const dur = durationProp.getFirstValue()
+        if (dur && typeof dur.toSeconds === 'function') {
+          end = dayjs(start).add(dur.toSeconds(), 'second').toDate()
+        }
+      }
+    }
+    // For events with neither DTEND nor DURATION, use the same date as the start
     if (!end) end = start
 
     // ATTENDEE PARTSTAT → TENTATIVE fallback.
@@ -799,6 +915,25 @@ export function parseICSData(icsText, sourceId, options = {}) {
       const recurrIdTzid = recurrIdProp.getParameter('tzid') ?? dtStartTzid
       const recurrIdDate = icalTimeToDate(recurrIdVal, recurrIdTzid)
       if (recurrIdDate) event.recurrenceId = recurrIdDate
+    }
+
+    // RDATE — additional explicit recurrence dates (RFC 5545 § 3.8.5.2).
+    // Like EXDATE, RDATE may appear on multiple property lines or hold
+    // comma-separated values.  RDATE;VALUE=PERIOD is not supported; only the
+    // DATETIME and DATE forms are handled here.
+    const rdateProps = vevent.getAllProperties('rdate')
+    if (rdateProps.length > 0) {
+      const rdates = []
+      for (const rdateProp of rdateProps) {
+        const rdateTzid = rdateProp.getParameter('tzid') ?? dtStartTzid
+        for (const val of rdateProp.getValues()) {
+          if (val && typeof val.toICALString === 'function') {
+            const d = icalTimeToDate(val, rdateTzid)
+            if (d) rdates.push(d)
+          }
+        }
+      }
+      if (rdates.length > 0) event.rdates = rdates
     }
 
     events.push(event)
