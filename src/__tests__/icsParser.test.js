@@ -1232,3 +1232,604 @@ describe('deduplicateEvents', () => {
   })
 })
 
+// ─── DURATION ────────────────────────────────────────────────────────────────
+
+describe('DURATION property (RFC 5545 §3.8.2.5)', () => {
+  it('derives end time from DURATION when DTEND is absent (timed event)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:dur-timed@test
+SUMMARY:Duration Event
+DTSTART:20250315T100000Z
+DURATION:PT1H30M
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events).toHaveLength(1)
+    expect(events[0].start.toISOString()).toBe('2025-03-15T10:00:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2025-03-15T11:30:00.000Z')
+    expect(events[0].allDay).toBe(false)
+  })
+
+  it('derives end from DURATION with multi-day P notation', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:dur-multiday@test
+SUMMARY:Multi Day Duration
+DTSTART:20250315T090000Z
+DURATION:P2DT1H
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events).toHaveLength(1)
+    // P2DT1H = 2 days + 1 hour = 49 hours
+    expect(events[0].end.toISOString()).toBe('2025-03-17T10:00:00.000Z')
+  })
+
+  it('derives end from DURATION with weeks notation', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:dur-weeks@test
+SUMMARY:Week Duration
+DTSTART:20250315T100000Z
+DURATION:P1W
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events).toHaveLength(1)
+    // P1W = 7 days
+    expect(events[0].end.toISOString()).toBe('2025-03-22T10:00:00.000Z')
+  })
+
+  it('uses start as end when neither DTEND nor DURATION is present', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:no-end@test
+SUMMARY:No End
+DTSTART:20250315T100000Z
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events).toHaveLength(1)
+    expect(events[0].start.toISOString()).toBe(events[0].end.toISOString())
+  })
+
+  it('preserves correct duration when a DURATION event recurs', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:dur-recur@test
+SUMMARY:Recurring Duration Event
+DTSTART:20250106T100000Z
+DURATION:PT30M
+RRULE:FREQ=WEEKLY;COUNT=3
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    const rangeStart = new Date('2025-01-01T00:00:00Z')
+    const rangeEnd = new Date('2025-01-31T23:59:59Z')
+    const occurrences = expandEvents(events, rangeStart, rangeEnd)
+    expect(occurrences).toHaveLength(3)
+    occurrences.forEach((occ) => {
+      const durationMs = occ.end.getTime() - occ.start.getTime()
+      expect(durationMs).toBe(30 * 60 * 1000) // 30 minutes
+    })
+  })
+})
+
+// ─── BYMONTHDAY ──────────────────────────────────────────────────────────────
+
+describe('BYMONTHDAY in RRULE (RFC 5545 §3.3.10)', () => {
+  const rangeStart = new Date('2025-01-01T00:00:00Z')
+  const rangeEnd = new Date('2025-03-31T23:59:59Z')
+
+  it('expands FREQ=MONTHLY;BYMONTHDAY=15 (every 15th of the month)', () => {
+    const events = [
+      {
+        id: 'monthly-15th@test',
+        title: '15th of Month',
+        start: new Date('2025-01-15T10:00:00Z'),
+        end: new Date('2025-01-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYMONTHDAY=15',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(3)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-15', '2025-02-15', '2025-03-15'])
+  })
+
+  it('expands FREQ=MONTHLY;BYMONTHDAY=1,15 (1st and 15th of month)', () => {
+    const events = [
+      {
+        id: 'monthly-1-15@test',
+        title: '1st and 15th',
+        start: new Date('2025-01-01T09:00:00Z'),
+        end: new Date('2025-01-01T09:30:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYMONTHDAY=1,15',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(6) // Jan 1, Jan 15, Feb 1, Feb 15, Mar 1, Mar 15
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-01', '2025-01-15', '2025-02-01', '2025-02-15', '2025-03-01', '2025-03-15'])
+  })
+
+  it('expands FREQ=MONTHLY;BYMONTHDAY=-1 (last day of every month)', () => {
+    const events = [
+      {
+        id: 'monthly-last@test',
+        title: 'Last Day',
+        start: new Date('2025-01-31T10:00:00Z'),
+        end: new Date('2025-01-31T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYMONTHDAY=-1',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(3)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    // Jan 31, Feb 28, Mar 31
+    expect(dates).toEqual(['2025-01-31', '2025-02-28', '2025-03-31'])
+  })
+
+  it('skips months where BYMONTHDAY value exceeds month length', () => {
+    // BYMONTHDAY=31 — February and some other months have no 31st day
+    const events = [
+      {
+        id: 'monthly-31@test',
+        title: '31st',
+        start: new Date('2025-01-31T10:00:00Z'),
+        end: new Date('2025-01-31T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYMONTHDAY=31',
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    // Jan 31 ✓, Feb 31 ✗ (skip), Mar 31 ✓
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-31', '2025-03-31'])
+  })
+
+  it('respects COUNT with BYMONTHDAY', () => {
+    const events = [
+      {
+        id: 'monthly-count@test',
+        title: 'Monthly Count',
+        start: new Date('2024-11-15T10:00:00Z'),
+        end: new Date('2024-11-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=MONTHLY;BYMONTHDAY=15;COUNT=4',
+      },
+    ]
+    const result = expandEvents(events, new Date('2025-01-01T00:00:00Z'), new Date('2025-12-31T23:59:59Z'))
+    // COUNT=4 starting Nov 2024: Nov 15, Dec 15, Jan 15, Feb 15
+    // Only Jan and Feb are within the range
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-15', '2025-02-15'])
+  })
+
+  it('parses FREQ=MONTHLY;BYMONTHDAY from a full ICS string', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:monthly-bymonthday@test
+SUMMARY:Monthly on 20th
+DTSTART:20250120T100000Z
+DTEND:20250120T110000Z
+RRULE:FREQ=MONTHLY;BYMONTHDAY=20
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    expect(result).toHaveLength(3)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-20', '2025-02-20', '2025-03-20'])
+  })
+})
+
+// ─── BYMONTH ─────────────────────────────────────────────────────────────────
+
+describe('BYMONTH in RRULE (RFC 5545 §3.3.10)', () => {
+  it('expands FREQ=YEARLY;BYMONTH=7 (every July on DTSTART day-of-month)', () => {
+    const events = [
+      {
+        id: 'yearly-july@test',
+        title: 'July Anniversary',
+        start: new Date('2023-07-04T12:00:00Z'),
+        end: new Date('2023-07-04T13:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=YEARLY;BYMONTH=7',
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2026-12-31T23:59:59Z'),
+    )
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-07-04', '2026-07-04'])
+  })
+
+  it('expands FREQ=YEARLY;BYMONTH=7;BYMONTHDAY=4 (July 4th every year)', () => {
+    const events = [
+      {
+        id: 'july4@test',
+        title: 'Independence Day',
+        start: new Date('2020-07-04T00:00:00Z'),
+        end: new Date('2020-07-04T00:00:00Z'),
+        allDay: true,
+        source: 'test',
+        rrule: 'FREQ=YEARLY;BYMONTH=7;BYMONTHDAY=4',
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2026-12-31T23:59:59Z'),
+    )
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-07-04', '2026-07-04'])
+  })
+
+  it('expands FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=25 (Christmas)', () => {
+    const events = [
+      {
+        id: 'xmas@test',
+        title: 'Christmas',
+        start: new Date('2020-12-25T00:00:00Z'),
+        end: new Date('2020-12-25T00:00:00Z'),
+        allDay: true,
+        source: 'test',
+        rrule: 'FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=25',
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2027-12-31T23:59:59Z'),
+    )
+    expect(result).toHaveLength(3)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-12-25', '2026-12-25', '2027-12-25'])
+  })
+
+  it('expands FREQ=YEARLY;BYMONTH=1,7 (Jan and Jul each year)', () => {
+    const events = [
+      {
+        id: 'biannual@test',
+        title: 'Biannual',
+        start: new Date('2023-01-01T09:00:00Z'),
+        end: new Date('2023-01-01T10:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=YEARLY;BYMONTH=1,7',
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2025-12-31T23:59:59Z'),
+    )
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-01', '2025-07-01'])
+  })
+
+  it('respects COUNT with BYMONTH', () => {
+    const events = [
+      {
+        id: 'yearly-count@test',
+        title: 'Yearly Count',
+        start: new Date('2020-07-04T12:00:00Z'),
+        end: new Date('2020-07-04T13:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=YEARLY;BYMONTH=7;COUNT=4',
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2022-01-01T00:00:00Z'),
+      new Date('2025-12-31T23:59:59Z'),
+    )
+    // Total 4 occurrences: Jul 4 2020, 2021, 2022, 2023; only 2022/2023 in range
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2022-07-04', '2023-07-04'])
+  })
+
+  it('parses FREQ=YEARLY;BYMONTH;BYMONTHDAY from a full ICS string', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:new-year@test
+SUMMARY:New Year's Day
+DTSTART:20200101T000000Z
+DTEND:20200101T010000Z
+RRULE:FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    const result = expandEvents(
+      events,
+      new Date('2025-01-01T00:00:00Z'),
+      new Date('2026-12-31T23:59:59Z'),
+    )
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toEqual(['2025-01-01', '2026-01-01'])
+  })
+})
+
+// ─── RDATE ───────────────────────────────────────────────────────────────────
+
+describe('RDATE property (RFC 5545 §3.8.5.2)', () => {
+  it('parses RDATE values from an ICS file', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:rdate-basic@test
+SUMMARY:Extra Dates Event
+DTSTART:20250315T100000Z
+DTEND:20250315T110000Z
+RDATE:20250322T100000Z,20250329T100000Z
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'src')
+    expect(events).toHaveLength(1)
+    expect(events[0].rdates).toHaveLength(2)
+    expect(events[0].rdates[0]).toBeInstanceOf(Date)
+    expect(events[0].rdates[0].toISOString()).toBe('2025-03-22T10:00:00.000Z')
+    expect(events[0].rdates[1].toISOString()).toBe('2025-03-29T10:00:00.000Z')
+  })
+
+  it('expands RDATE occurrences alongside the base DTSTART occurrence (no RRULE)', () => {
+    const events = [
+      {
+        id: 'rdate-only@test',
+        title: 'Extra Dates',
+        start: new Date('2025-03-15T10:00:00Z'),
+        end: new Date('2025-03-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [new Date('2025-03-22T10:00:00Z'), new Date('2025-03-29T10:00:00Z')],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // Base DTSTART + 2 RDATEs = 3 occurrences
+    expect(result).toHaveLength(3)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toContain('2025-03-15')
+    expect(dates).toContain('2025-03-22')
+    expect(dates).toContain('2025-03-29')
+  })
+
+  it('preserves event duration for RDATE occurrences', () => {
+    const events = [
+      {
+        id: 'rdate-duration@test',
+        title: 'Extra Dates With Duration',
+        start: new Date('2025-03-15T10:00:00Z'),
+        end: new Date('2025-03-15T11:30:00Z'), // 90 minutes
+        allDay: false,
+        source: 'test',
+        rdates: [new Date('2025-03-22T10:00:00Z')],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    expect(result).toHaveLength(2)
+    result.forEach((occ) => {
+      const ms = occ.end.getTime() - occ.start.getTime()
+      expect(ms).toBe(90 * 60 * 1000)
+    })
+  })
+
+  it('adds RDATE occurrences in addition to RRULE occurrences', () => {
+    const events = [
+      {
+        id: 'rdate-plus-rrule@test',
+        title: 'Weekly + Extra',
+        start: new Date('2025-03-03T10:00:00Z'), // Monday
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=2',
+        rdates: [new Date('2025-03-20T10:00:00Z')], // extra Thursday
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // RRULE: Mar 3, Mar 10 (COUNT=2) + RDATE: Mar 20
+    expect(result).toHaveLength(3)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-03', '2025-03-10', '2025-03-20'])
+  })
+
+  it('respects EXDATE for RDATE occurrences', () => {
+    const events = [
+      {
+        id: 'rdate-exdate@test',
+        title: 'RDATE with EXDATE',
+        start: new Date('2025-03-15T10:00:00Z'),
+        end: new Date('2025-03-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [new Date('2025-03-22T10:00:00Z'), new Date('2025-03-29T10:00:00Z')],
+        exdates: [new Date('2025-03-22T10:00:00Z')], // exclude the first RDATE
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // Base + 2 RDATEs - 1 EXDATE = 2
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10))
+    expect(dates).toContain('2025-03-15')
+    expect(dates).toContain('2025-03-29')
+    expect(dates).not.toContain('2025-03-22')
+  })
+
+  it('does not double-emit when an RDATE timestamp matches an RRULE-generated occurrence', () => {
+    // RDATE coincides with the 2nd RRULE occurrence (Mar 10)
+    const events = [
+      {
+        id: 'rdate-rrule-dedup@test',
+        title: 'Dedup Test',
+        start: new Date('2025-03-03T10:00:00Z'), // Monday
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=2',
+        rdates: [new Date('2025-03-10T10:00:00Z')], // same as 2nd RRULE occurrence
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // RRULE: Mar 3, Mar 10 — the RDATE duplicates Mar 10 and must not be emitted twice
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-03', '2025-03-10'])
+  })
+
+  it('does not retain the rdates property on RRULE-expanded occurrences', () => {
+    const events = [
+      {
+        id: 'rdate-rrule-strip@test',
+        title: 'No Rdates On Expanded',
+        start: new Date('2025-03-03T10:00:00Z'),
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=2',
+        rdates: [new Date('2025-03-20T10:00:00Z')],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    result.forEach((occ) => expect(occ.rdates).toBeUndefined())
+  })
+
+  it('filters out RDATE occurrences outside the requested range (RRULE branch)', () => {
+    const events = [
+      {
+        id: 'rdate-range-rrule@test',
+        title: 'Range Filter',
+        start: new Date('2025-03-03T10:00:00Z'),
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=1',
+        rdates: [
+          new Date('2025-04-15T10:00:00Z'), // outside range
+          new Date('2025-03-20T10:00:00Z'), // inside range
+        ],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // RRULE: Mar 3 + in-range RDATE: Mar 20; Apr 15 must be excluded
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-03', '2025-03-20'])
+  })
+
+  it('filters out RDATE occurrences outside the requested range (no RRULE)', () => {
+    const events = [
+      {
+        id: 'rdate-range-norule@test',
+        title: 'Range Filter No Rule',
+        start: new Date('2025-03-15T10:00:00Z'),
+        end: new Date('2025-03-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [
+          new Date('2025-04-10T10:00:00Z'), // outside range
+          new Date('2025-03-22T10:00:00Z'), // inside range
+        ],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // Base Mar 15 + in-range RDATE Mar 22; Apr 10 must be excluded
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-15', '2025-03-22'])
+  })
+
+  it('filters out the base DTSTART occurrence when it falls outside the requested range (no RRULE)', () => {
+    const events = [
+      {
+        id: 'rdate-base-out-of-range@test',
+        title: 'Base Out of Range',
+        start: new Date('2025-02-15T10:00:00Z'), // before range
+        end: new Date('2025-02-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [new Date('2025-03-22T10:00:00Z')], // inside range
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // Base Feb 15 is before range → excluded; only RDATE Mar 22
+    expect(result).toHaveLength(1)
+    expect(result[0].start.toISOString().slice(0, 10)).toBe('2025-03-22')
+  })
+
+  it('strips rdates property from expanded occurrences (no RRULE)', () => {
+    const events = [
+      {
+        id: 'rdate-strip@test',
+        title: 'Strip Test',
+        start: new Date('2025-03-15T10:00:00Z'),
+        end: new Date('2025-03-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [new Date('2025-03-22T10:00:00Z')],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    result.forEach((occ) => expect(occ.rdates).toBeUndefined())
+  })
+})
+
