@@ -296,6 +296,68 @@ END:VCALENDAR`
     expect(events).toHaveLength(0)
   })
 
+  it('emits a CANCELLED override with recurrenceId when STATUS:CANCELLED + RECURRENCE-ID (cancelled recurring occurrence)', () => {
+    // A specific occurrence of a recurring series was cancelled.  parseICSData
+    // must emit it with status=CANCELLED so expandEvents can suppress the slot.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:weekly-series@test
+SUMMARY:Weekly Meeting
+DTSTART:20250106T100000Z
+DTEND:20250106T110000Z
+RRULE:FREQ=WEEKLY
+END:VEVENT
+BEGIN:VEVENT
+UID:weekly-series@test
+SUMMARY:Weekly Meeting
+DTSTART:20250113T100000Z
+DTEND:20250113T110000Z
+RECURRENCE-ID:20250113T100000Z
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    const cancelled = events.find((e) => e.status === 'CANCELLED')
+    expect(cancelled).toBeDefined()
+    expect(cancelled.recurrenceId).toBeInstanceOf(Date)
+    expect(cancelled.recurrenceId.toISOString()).toBe('2025-01-13T10:00:00.000Z')
+    // The series base event must still be present
+    expect(events.find((e) => e.rrule)).toBeDefined()
+  })
+
+  it('emits a CANCELLED override with recurrenceId when resolveStatus returns CANCELLED + RECURRENCE-ID (Outlook cancelled occurrence)', () => {
+    // Outlook cancels a specific occurrence via X-MICROSOFT-CDO-BUSYSTATUS:FREE
+    // + RECURRENCE-ID.  parseICSData must keep it so expandEvents can suppress it.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:weekly-outlook@test
+SUMMARY:Weekly Outlook Meeting
+DTSTART:20250106T100000Z
+DTEND:20250106T110000Z
+RRULE:FREQ=WEEKLY
+END:VEVENT
+BEGIN:VEVENT
+UID:weekly-outlook@test
+SUMMARY:Weekly Outlook Meeting
+DTSTART:20250113T100000Z
+DTEND:20250113T110000Z
+RECURRENCE-ID:20250113T100000Z
+STATUS:CONFIRMED
+X-MICROSOFT-CDO-BUSYSTATUS:FREE
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'FREE') return 'CANCELLED'
+        return status
+      },
+    })
+    const cancelled = events.find((e) => e.status === 'CANCELLED')
+    expect(cancelled).toBeDefined()
+    expect(cancelled.recurrenceId).toBeInstanceOf(Date)
+    expect(cancelled.recurrenceId.toISOString()).toBe('2025-01-13T10:00:00.000Z')
+  })
+
   it('does not change status when X-MICROSOFT-CDO-BUSYSTATUS is not TENTATIVE', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
@@ -940,6 +1002,80 @@ describe('expandEvents', () => {
     // ID must be unique and not clash with the series base id
     expect(override.id).toBe(`series@test__occ__${recurrenceId.valueOf()}`)
     expect(override.id).not.toBe('series@test')
+  })
+
+  it('suppresses a cancelled occurrence (STATUS:CANCELLED + RECURRENCE-ID) from RRULE expansion', () => {
+    // The Jan 13 occurrence was cancelled.  It must not appear in results even
+    // though the RRULE would normally emit it, and no replacement should appear.
+    const baseStart = new Date('2025-01-06T10:00:00Z')
+    const baseEnd   = new Date('2025-01-06T11:00:00Z')
+    const cancelledOriginal = new Date('2025-01-13T10:00:00Z')
+    const events = [
+      {
+        id: 'weekly-series@test',
+        title: 'Weekly Meeting',
+        start: baseStart,
+        end: baseEnd,
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY',
+      },
+      {
+        id: 'weekly-series@test',
+        title: 'Weekly Meeting',
+        start: cancelledOriginal,
+        end: new Date('2025-01-13T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        status: 'CANCELLED',
+        recurrenceId: cancelledOriginal,
+      },
+    ]
+    const result = expandEvents(events, rangeStart, rangeEnd)
+    const starts = result.map((e) => e.start.toISOString())
+
+    // Cancelled occurrence must be suppressed (not in results)
+    expect(starts).not.toContain('2025-01-13T10:00:00.000Z')
+    // Other occurrences of the series must still appear
+    expect(starts).toContain('2025-01-06T10:00:00.000Z')
+    expect(starts).toContain('2025-01-20T10:00:00.000Z')
+  })
+
+  it('suppresses a cancelled occurrence resolved via resolveStatus (Outlook FREE busystatus + RECURRENCE-ID)', () => {
+    // Simulate the full parseICSData + expandEvents pipeline for an Outlook
+    // series where one occurrence was cancelled via X-MICROSOFT-CDO-BUSYSTATUS:FREE.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:weekly-outlook@test
+SUMMARY:Weekly Outlook
+DTSTART:20250106T100000Z
+DTEND:20250106T110000Z
+RRULE:FREQ=WEEKLY
+END:VEVENT
+BEGIN:VEVENT
+UID:weekly-outlook@test
+SUMMARY:Weekly Outlook
+DTSTART:20250113T100000Z
+DTEND:20250113T110000Z
+RECURRENCE-ID:20250113T100000Z
+STATUS:CONFIRMED
+X-MICROSOFT-CDO-BUSYSTATUS:FREE
+END:VEVENT
+END:VCALENDAR`
+    const parsed = parseICSData(ics, 'test-source', {
+      resolveStatus(status, getProp) {
+        if (getProp('x-microsoft-cdo-busystatus') === 'FREE') return 'CANCELLED'
+        return status
+      },
+    })
+    const result = expandEvents(parsed, rangeStart, rangeEnd)
+    const starts = result.map((e) => e.start.toISOString())
+
+    // Cancelled occurrence must be suppressed
+    expect(starts).not.toContain('2025-01-13T10:00:00.000Z')
+    // Other occurrences must still appear
+    expect(starts).toContain('2025-01-06T10:00:00.000Z')
+    expect(starts).toContain('2025-01-20T10:00:00.000Z')
   })
 
   it('handles INTERVAL > 1', () => {
