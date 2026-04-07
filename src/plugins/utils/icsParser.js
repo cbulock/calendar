@@ -685,6 +685,9 @@ export function expandEvents(events, rangeStart, rangeEnd) {
   const results = []
   for (const event of events) {
     if (event.recurrenceId) {
+      // A CANCELLED override exists only to suppress the matching RRULE slot
+      // via overridesByUid (built above).  Do not emit it as a visible event.
+      if (event.status === 'CANCELLED') continue
       // Override/rescheduled occurrence — emit as a standalone event, not as
       // part of the recurring series expansion.  Assign a unique ID derived
       // from the series UID + original occurrence timestamp so multiple
@@ -779,9 +782,13 @@ export function parseICSData(icsText, sourceId, options = {}) {
   for (const vevent of vevents) {
     // RFC 5545 defines three VEVENT statuses: TENTATIVE, CONFIRMED, CANCELLED.
     // TENTATIVE and CONFIRMED events represent real calendar time and should be
-    // displayed.  Only CANCELLED events are hidden.
+    // displayed.  Only CANCELLED events are hidden — but a CANCELLED VEVENT that
+    // carries a RECURRENCE-ID must not be dropped here: it represents a specific
+    // cancelled occurrence of a recurring series.  We need its RECURRENCE-ID so
+    // expandEvents can exclude that slot from the RRULE expansion.  The final
+    // skip (for non-override cancellations) happens further down, after we have
+    // parsed the RECURRENCE-ID.
     const rawStatus = (vevent.getFirstPropertyValue('status') || '').trim().toUpperCase()
-    if (rawStatus === 'CANCELLED') continue
 
     // DTSTART is required for a usable event
     const dtStartProp = vevent.getFirstProperty('dtstart')
@@ -842,9 +849,9 @@ export function parseICSData(icsText, sourceId, options = {}) {
     }
 
     // A plugin's resolveStatus may map a vendor-specific property to CANCELLED
-    // (e.g. Outlook X-MICROSOFT-CDO-BUSYSTATUS:FREE).  Skip those events the
-    // same way we skip events with a raw STATUS:CANCELLED value.
-    if (status === 'CANCELLED') continue
+    // (e.g. Outlook X-MICROSOFT-CDO-BUSYSTATUS:FREE).  Defer the skip until
+    // after RECURRENCE-ID is parsed so per-occurrence cancellations are handled
+    // correctly (see the final CANCELLED guard near events.push()).
 
     if (!status) {
       const attendeeProps = vevent.getAllProperties('attendee')
@@ -948,6 +955,14 @@ export function parseICSData(icsText, sourceId, options = {}) {
       }
       if (rdates.length > 0) event.rdates = rdates
     }
+
+    // Skip cancelled events, but only after we have had a chance to parse the
+    // RECURRENCE-ID.  A CANCELLED VEVENT *with* a RECURRENCE-ID represents a
+    // specific cancelled occurrence of a recurring series: expandEvents needs to
+    // see it so it can exclude that slot from the RRULE expansion.  A CANCELLED
+    // VEVENT without a RECURRENCE-ID is a whole-series or standalone cancellation
+    // and can be dropped entirely.
+    if (status === 'CANCELLED' && !event.recurrenceId) continue
 
     events.push(event)
   }
