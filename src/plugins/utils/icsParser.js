@@ -449,7 +449,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
   // For MONTHLY+BYMONTHDAY (without BYDAY), also normalize to day 1 so that a
   // BYMONTHDAY value earlier in the month than DTSTART is still emitted in the
   // first month.
-  if (p.FREQ === 'MONTHLY' && byMonthDayRules && byMonthDayRules.length > 0 && !(byDayRules && byDayRules.length > 0)) {
+  if (p.FREQ === 'MONTHLY' && byMonthDayRules && byMonthDayRules.length > 0 && (!byDayRules || byDayRules.length === 0)) {
     cursor = cursor.date(1)
   }
   // For YEARLY+BYMONTH, normalize to January 1 of the start year so that every
@@ -570,12 +570,13 @@ function expandRRule(event, rangeStart, rangeEnd) {
       //      BYMONTH=1,7            → every Jan/Jul on the DTSTART day-of-month
       //      BYMONTHDAY=25;BYMONTH=12 → every December 25th
       // cursor is normalized to January 1 of the year being evaluated.
-      const startDayOfMonth = dayjs.utc(event.start).date()
-      const months = byMonthRules ?? [dayjs.utc(event.start).month() + 1] // 1-based
+      const eventStart = dayjs.utc(event.start)
+      const startDayOfMonth = eventStart.date()
+      const months = byMonthRules ?? [eventStart.month() + 1] // 1-based
       candidates = months
         .flatMap((month) => {
           const monthCursor = cursor.month(month - 1) // dayjs months are 0-based
-          const daysInMonth = monthCursor.date(1).daysInMonth()
+          const daysInMonth = monthCursor.daysInMonth()
           if (byMonthDayRules) {
             return byMonthDayRules.flatMap((mday) => {
               const day = mday > 0 ? mday : daysInMonth + 1 + mday
