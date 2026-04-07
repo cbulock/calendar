@@ -606,7 +606,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
       const occEnd = dayjs(occ).add(duration, 'millisecond').toDate()
       if (occEnd >= rangeStart && occ <= rangeEnd) {
         // eslint-disable-next-line no-unused-vars
-        const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
+        const { rrule: _r, exdates: _e, startTzid: _t, rdates: _rd, ...rest } = event
         results.push({ ...rest, start: occ, end: occEnd, id: `${event.id}__occ__${dayjs(occ).valueOf()}` })
       }
     }
@@ -629,7 +629,7 @@ function expandRRule(event, rangeStart, rangeEnd) {
         // Unknown frequency — cannot reliably expand; return a single
         // base event without recurrence-only fields to keep shape consistent.
         // eslint-disable-next-line no-unused-vars
-        const { rrule: _r, exdates: _e, startTzid: _t, ...rest } = event
+        const { rrule: _r, exdates: _e, startTzid: _t, rdates: _rd, ...rest } = event
         return [{ ...rest }]
       }
     }
@@ -701,17 +701,21 @@ export function expandEvents(events, rangeStart, rangeEnd) {
       const expandable = extraExdates
         ? { ...event, exdates: [...(event.exdates ?? []), ...extraExdates] }
         : event
-      results.push(...expandRRule(expandable, rangeStart, rangeEnd))
+      const expandedOccurrences = expandRRule(expandable, rangeStart, rangeEnd)
+      results.push(...expandedOccurrences)
       // Also emit any RDATE occurrences not already covered by the RRULE expansion.
       if (event.rdates && event.rdates.length > 0) {
         const exdateSet = new Set((expandable.exdates ?? []).map((d) => dayjs(d).valueOf()))
+        const rruleStartSet = new Set(expandedOccurrences.map((occ) => dayjs(occ.start).valueOf()))
         const duration = dayjs(event.end).diff(dayjs(event.start))
         for (const rd of event.rdates) {
-          if (exdateSet.has(dayjs(rd).valueOf())) continue
+          const rdMs = dayjs(rd).valueOf()
+          if (exdateSet.has(rdMs) || rruleStartSet.has(rdMs)) continue
           const occEnd = dayjs(rd).add(duration, 'millisecond').toDate()
+          if (occEnd < rangeStart || rd > rangeEnd) continue
           // eslint-disable-next-line no-unused-vars
           const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, rdates: _rd, ...rest } = event
-          results.push({ ...rest, start: rd, end: occEnd, id: `${event.id}__occ__${dayjs(rd).valueOf()}` })
+          results.push({ ...rest, start: rd, end: occEnd, id: `${event.id}__occ__${rdMs}` })
         }
       }
     } else if (event.rdates && event.rdates.length > 0) {
@@ -720,15 +724,16 @@ export function expandEvents(events, rangeStart, rangeEnd) {
       const exdateSet = new Set((event.exdates ?? []).map((d) => dayjs(d).valueOf()))
       // eslint-disable-next-line no-unused-vars
       const { rrule: _r, exdates: _e, startTzid: _t, recurrenceId: _c, rdates: _rd, ...rest } = event
-      // Include the base DTSTART occurrence (unless it is excluded).
-      if (!exdateSet.has(dayjs(event.start).valueOf())) {
+      // Include the base DTSTART occurrence (unless it is excluded or out of range).
+      if (!exdateSet.has(dayjs(event.start).valueOf()) && event.end >= rangeStart && event.start <= rangeEnd) {
         results.push(rest)
       }
-      // Emit each RDATE as an additional occurrence.
+      // Emit each RDATE as an additional occurrence (skip excluded and out-of-range).
       const duration = dayjs(event.end).diff(dayjs(event.start))
       for (const rd of event.rdates) {
         if (exdateSet.has(dayjs(rd).valueOf())) continue
         const occEnd = dayjs(rd).add(duration, 'millisecond').toDate()
+        if (occEnd < rangeStart || rd > rangeEnd) continue
         results.push({ ...rest, start: rd, end: occEnd, id: `${event.id}__occ__${dayjs(rd).valueOf()}` })
       }
     } else {
@@ -859,8 +864,12 @@ export function parseICSData(icsText, sourceId, options = {}) {
     // Deterministic fallback ID for events that do not have a UID.
     // Use the raw iCal string representations of DTSTART/DTEND so the hash
     // value stays consistent with the format the previous custom parser stored.
+    // When DTEND is absent, use the raw DURATION string instead so two events
+    // with the same DTSTART but different durations do not collide.
     const dtStartStr = dtstart.toICALString()
-    const dtEndStr   = dtend ? dtend.toICALString() : ''
+    const dtEndStr   = dtend
+      ? dtend.toICALString()
+      : (vevent.getFirstProperty('duration')?.getFirstValue()?.toString() ?? '')
 
     const event = {
       id:
@@ -928,7 +937,10 @@ export function parseICSData(icsText, sourceId, options = {}) {
       for (const rdateProp of rdateProps) {
         const rdateTzid = rdateProp.getParameter('tzid') ?? dtStartTzid
         for (const val of rdateProp.getValues()) {
-          if (val && typeof val.toICALString === 'function') {
+          // RDATE;VALUE=PERIOD is not supported; skip ICAL.Period objects
+          // (they have a 'start' property and either 'end' or 'duration').
+          if (val && typeof val === 'object' && 'start' in val && ('end' in val || 'duration' in val)) continue
+          if (val instanceof ICAL.Time) {
             const d = icalTimeToDate(val, rdateTzid)
             if (d) rdates.push(d)
           }

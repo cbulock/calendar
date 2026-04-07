@@ -1554,7 +1554,8 @@ describe('BYMONTH in RRULE (RFC 5545 §3.3.10)', () => {
 BEGIN:VEVENT
 UID:new-year@test
 SUMMARY:New Year's Day
-DTSTART:20200101
+DTSTART:20200101T000000Z
+DTEND:20200101T010000Z
 RRULE:FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1
 END:VEVENT
 END:VCALENDAR`
@@ -1690,7 +1691,128 @@ END:VCALENDAR`
     expect(dates).not.toContain('2025-03-22')
   })
 
-  it('strips rdates property from expanded occurrences', () => {
+  it('does not double-emit when an RDATE timestamp matches an RRULE-generated occurrence', () => {
+    // RDATE coincides with the 2nd RRULE occurrence (Mar 10)
+    const events = [
+      {
+        id: 'rdate-rrule-dedup@test',
+        title: 'Dedup Test',
+        start: new Date('2025-03-03T10:00:00Z'), // Monday
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=2',
+        rdates: [new Date('2025-03-10T10:00:00Z')], // same as 2nd RRULE occurrence
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // RRULE: Mar 3, Mar 10 — the RDATE duplicates Mar 10 and must not be emitted twice
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-03', '2025-03-10'])
+  })
+
+  it('does not retain the rdates property on RRULE-expanded occurrences', () => {
+    const events = [
+      {
+        id: 'rdate-rrule-strip@test',
+        title: 'No Rdates On Expanded',
+        start: new Date('2025-03-03T10:00:00Z'),
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=2',
+        rdates: [new Date('2025-03-20T10:00:00Z')],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    result.forEach((occ) => expect(occ.rdates).toBeUndefined())
+  })
+
+  it('filters out RDATE occurrences outside the requested range (RRULE branch)', () => {
+    const events = [
+      {
+        id: 'rdate-range-rrule@test',
+        title: 'Range Filter',
+        start: new Date('2025-03-03T10:00:00Z'),
+        end: new Date('2025-03-03T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rrule: 'FREQ=WEEKLY;COUNT=1',
+        rdates: [
+          new Date('2025-04-15T10:00:00Z'), // outside range
+          new Date('2025-03-20T10:00:00Z'), // inside range
+        ],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // RRULE: Mar 3 + in-range RDATE: Mar 20; Apr 15 must be excluded
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-03', '2025-03-20'])
+  })
+
+  it('filters out RDATE occurrences outside the requested range (no RRULE)', () => {
+    const events = [
+      {
+        id: 'rdate-range-norule@test',
+        title: 'Range Filter No Rule',
+        start: new Date('2025-03-15T10:00:00Z'),
+        end: new Date('2025-03-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [
+          new Date('2025-04-10T10:00:00Z'), // outside range
+          new Date('2025-03-22T10:00:00Z'), // inside range
+        ],
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // Base Mar 15 + in-range RDATE Mar 22; Apr 10 must be excluded
+    expect(result).toHaveLength(2)
+    const dates = result.map((e) => e.start.toISOString().slice(0, 10)).sort()
+    expect(dates).toEqual(['2025-03-15', '2025-03-22'])
+  })
+
+  it('filters out the base DTSTART occurrence when it falls outside the requested range (no RRULE)', () => {
+    const events = [
+      {
+        id: 'rdate-base-out-of-range@test',
+        title: 'Base Out of Range',
+        start: new Date('2025-02-15T10:00:00Z'), // before range
+        end: new Date('2025-02-15T11:00:00Z'),
+        allDay: false,
+        source: 'test',
+        rdates: [new Date('2025-03-22T10:00:00Z')], // inside range
+      },
+    ]
+    const result = expandEvents(
+      events,
+      new Date('2025-03-01T00:00:00Z'),
+      new Date('2025-03-31T23:59:59Z'),
+    )
+    // Base Feb 15 is before range → excluded; only RDATE Mar 22
+    expect(result).toHaveLength(1)
+    expect(result[0].start.toISOString().slice(0, 10)).toBe('2025-03-22')
+  })
+
+  it('strips rdates property from expanded occurrences (no RRULE)', () => {
     const events = [
       {
         id: 'rdate-strip@test',
