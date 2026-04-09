@@ -61,7 +61,16 @@ const OutlookPlugin = {
       resolveStatus(status, getProp) {
         const busyStatus = getProp('x-microsoft-cdo-busystatus')
         if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
-        if (busyStatus === 'FREE') return 'CANCELLED'
+        if (busyStatus === 'FREE') {
+          // X-MICROSOFT-CDO-INSTTYPE=1 marks this VEVENT as the master of a
+          // recurring series.  FREE on a master series means the event is
+          // transparent (does not block calendar time), not that it has been
+          // cancelled or declined.  Treat FREE as CANCELLED only for single /
+          // occurrence-level events (INSTTYPE 0, 2, 3, or absent).
+          const instType = getProp('x-microsoft-cdo-insttype')
+          if (instType === '1') return status
+          return 'CANCELLED'
+        }
         return status
       },
     })
