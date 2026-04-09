@@ -118,6 +118,70 @@ describe('Outlook Plugin', () => {
     const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
     expect(events).toHaveLength(0)
   })
+
+  it('does not filter out a master recurring series (INSTTYPE=1) with X-MICROSOFT-CDO-BUSYSTATUS:FREE', async () => {
+    // Regression test: a recurring event created in Outlook with TRANSP:TRANSPARENT /
+    // X-MICROSOFT-CDO-BUSYSTATUS:FREE must not be treated as cancelled.
+    // X-MICROSOFT-CDO-INSTTYPE=1 identifies the VEVENT as the master of a recurring
+    // series, where FREE means time transparency (does not block calendar time), not
+    // that the series has been cancelled or declined.
+    //
+    // Reproduces the bug where a monthly recurring event
+    // (RRULE:FREQ=MONTHLY;BYDAY=2WE) with BUSYSTATUS:FREE + INSTTYPE:1 was not
+    // showing on the calendar.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Test//Test//EN',
+      'BEGIN:VEVENT',
+      'DESCRIPTION:Test\\n\\n',
+      'RRULE:FREQ=MONTHLY;UNTIL=20270310T203000Z;INTERVAL=1;BYDAY=2WE',
+      'UID:040000008200E00074C5B7101A82E008-insttype1@test',
+      'SUMMARY:Test',
+      'DTSTART;TZID=US Mountain Standard Time:20260408T133000',
+      'DTEND;TZID=US Mountain Standard Time:20260408T143000',
+      'CLASS:PUBLIC',
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+      'LOCATION:Microsoft Teams Meeting',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:1',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    // Range covers April 2026 — the 2nd Wednesday of April 2026 is the 8th.
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    // The series must appear; it must NOT be filtered as cancelled.
+    expect(events).toHaveLength(1)
+    expect(events[0].title).toBe('Test')
+    // DTSTART = 13:30 US Mountain Standard Time (America/Phoenix, UTC-7) = 20:30Z
+    expect(events[0].start.toISOString()).toBe('2026-04-08T20:30:00.000Z')
+    expect(events[0].end.toISOString()).toBe('2026-04-08T21:30:00.000Z')
+  })
+
+  it('still filters out a single-instance event (no INSTTYPE) with X-MICROSOFT-CDO-BUSYSTATUS:FREE', async () => {
+    // Regression guard: the INSTTYPE=1 exemption must not affect single events
+    // without an INSTTYPE property — those are still treated as cancelled/declined.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:outlook-free-no-insttype@test',
+      'SUMMARY:Declined Meeting',
+      'DTSTART:20260408T140000Z',
+      'DTEND:20260408T150000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
+  })
 })
 
 describe('Facebook Events Plugin', () => {
