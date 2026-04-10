@@ -155,3 +155,45 @@ export function stopScheduler() {
     _intervalHandle = null
   }
 }
+
+/**
+ * Refresh events for a single calendar source and merge them into the cache.
+ * Events previously fetched from this source are replaced.
+ *
+ * @param {string} sourceId - The id of the source to refresh.
+ * @returns {Promise<void>}
+ */
+export async function refreshSource(sourceId) {
+  const sources = loadSources()
+  const source = sources.find((s) => s.id === sourceId)
+  if (!source) {
+    throw new Error(`Source not found: ${sourceId}`)
+  }
+  if (source.enabled === false) {
+    throw new Error(`Source is disabled: ${sourceId}`)
+  }
+
+  const plugin = getPlugin(source.pluginId)
+  if (!plugin) {
+    throw new Error(`Unknown plugin "${source.pluginId}" for source ${sourceId}`)
+  }
+
+  const now = dayjs()
+  const start = now.subtract(PREFETCH_PAST_DAYS, 'day').toDate()
+  const end = now.add(PREFETCH_FUTURE_DAYS, 'day').toDate()
+  const dateRange = { start, end }
+
+  const newEvents = await plugin.fetchEvents(source.config, dateRange, source.id)
+
+  // Replace cached events for this source with the freshly fetched ones
+  const retained = _cache.events.filter((e) => e.source !== sourceId)
+  const merged = [...retained, ...newEvents]
+  merged.sort((a, b) => dayjs(a.start).valueOf() - dayjs(b.start).valueOf())
+  const dedupedEvents = deduplicateEvents(merged)
+
+  // Remove any existing error for this source and keep the rest
+  const retainedErrors = _cache.errors.filter((msg) => !msg.startsWith(`${source.label}:`))
+
+  _cache = { events: dedupedEvents, errors: retainedErrors, lastRefreshed: new Date() }
+  console.log(`[scheduler] Refreshed source "${source.label}" — ${newEvents.length} event(s)`)
+}
