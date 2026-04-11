@@ -158,6 +158,47 @@ describe('Server Plugin Registry — Outlook', () => {
     expect(events).toHaveLength(0)
   })
 
+  it('shows a single-instance unanswered invite (INSTTYPE=0, FREE, INTENDEDSTATUS=BUSY) as TENTATIVE', async () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:srv-outlook-single-unanswered@test',
+      'SUMMARY:Team Lunch',
+      'DTSTART:20260415T120000Z',
+      'DTEND:20260415T130000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:0',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: `${TEST_HOST}/outlook.ics` }, dateRange, 'outlook-1')
+    expect(events).toHaveLength(1)
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('does not resurface a STATUS:CANCELLED event when BUSYSTATUS is TENTATIVE', async () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:srv-outlook-rfc-cancelled@test',
+      'SUMMARY:Cancelled by organiser',
+      'DTSTART:20260415T140000Z',
+      'DTEND:20260415T150000Z',
+      'STATUS:CANCELLED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: `${TEST_HOST}/outlook.ics` }, dateRange, 'outlook-1')
+    expect(events).toHaveLength(0)
+  })
+
   it('throws when the ICS fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 404 })
     const dateRange = { start: new Date('2025-04-01T00:00:00Z'), end: new Date('2025-04-30T00:00:00Z') }
