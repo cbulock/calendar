@@ -199,6 +199,64 @@ describe('Server Plugin Registry — Outlook', () => {
     expect(events).toHaveLength(0)
   })
 
+  it('hides a declined single-instance meeting (INTENDEDSTATUS:BUSY, ATTENDEE PARTSTAT:DECLINED)', async () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:srv-outlook-declined-single@test',
+      'SUMMARY:Declined Meeting',
+      'DTSTART:20260415T140000Z',
+      'DTEND:20260415T150000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:0',
+      'ATTENDEE;PARTSTAT=DECLINED;ROLE=REQ-PARTICIPANT:mailto:me@example.com',
+      'ORGANIZER:mailto:organizer@example.com',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: `${TEST_HOST}/outlook.ics` }, dateRange, 'outlook-1')
+    expect(events).toHaveLength(0)
+  })
+
+  it('hides a declined exception occurrence (INSTTYPE:2, ATTENDEE PARTSTAT:DECLINED)', async () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:srv-outlook-recurring-declined@test',
+      'SUMMARY:Weekly Standup',
+      'DTSTART:20260408T090000Z',
+      'DTEND:20260408T093000Z',
+      'RRULE:FREQ=WEEKLY',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:1',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:srv-outlook-recurring-declined@test',
+      'SUMMARY:Weekly Standup (rescheduled)',
+      'DTSTART:20260415T100000Z',
+      'DTEND:20260415T103000Z',
+      'RECURRENCE-ID:20260415T090000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:2',
+      'ATTENDEE;PARTSTAT=DECLINED;ROLE=REQ-PARTICIPANT:mailto:me@example.com',
+      'ORGANIZER:mailto:organizer@example.com',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: `${TEST_HOST}/outlook.ics` }, dateRange, 'outlook-1')
+    const declinedOccurrence = events.find((e) => e.title === 'Weekly Standup (rescheduled)')
+    expect(declinedOccurrence).toBeUndefined()
+  })
+
   it('throws when the ICS fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 404 })
     const dateRange = { start: new Date('2025-04-01T00:00:00Z'), end: new Date('2025-04-30T00:00:00Z') }
