@@ -254,6 +254,55 @@ END:VCALENDAR`
     expect(events[0].status).toBe('')
   })
 
+  it('filters out events when ATTENDEE PARTSTAT is DECLINED and no STATUS is set (declined single-attendee invite)', () => {
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:declined-invite@test
+SUMMARY:Declined Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=DECLINED;CN=Test User:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(0)
+  })
+
+  it('does not filter multi-attendee events when one attendee has PARTSTAT=DECLINED', () => {
+    // Only single-attendee checks are used to infer status; multi-attendee
+    // meetings with a declined attendee are still visible (e.g. the organiser's
+    // copy of the event, or a shared calendar).
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:multi-attendee-declined@test
+SUMMARY:Group Meeting
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+ATTENDEE;PARTSTAT=ACCEPTED;CN=Organiser:mailto:organiser@example.com
+ATTENDEE;PARTSTAT=DECLINED;CN=Test User:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events).toHaveLength(1)
+  })
+
+  it('does not override explicit STATUS:CONFIRMED when ATTENDEE PARTSTAT is DECLINED', () => {
+    // Explicit STATUS takes precedence; PARTSTAT is only used as a fallback
+    // when no STATUS property is present.
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:confirmed-declined@test
+SUMMARY:Confirmed but Declined
+DTSTART:20250401T140000Z
+DTEND:20250401T150000Z
+STATUS:CONFIRMED
+ATTENDEE;PARTSTAT=DECLINED;CN=Test User:mailto:user@example.com
+END:VEVENT
+END:VCALENDAR`
+    const events = parseICSData(ics, 'test-source')
+    expect(events[0].status).toBe('CONFIRMED')
+  })
+
   it('overrides STATUS:CONFIRMED to TENTATIVE when X-MICROSOFT-CDO-BUSYSTATUS is TENTATIVE (Outlook tentative invite)', () => {
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT
