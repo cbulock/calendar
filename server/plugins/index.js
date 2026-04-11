@@ -8,6 +8,8 @@
 import { lookup } from 'node:dns/promises'
 import { parseICSData } from '../icsParser.js'
 import { expandEvents } from '../../src/plugins/utils/icsParser.js'
+import { resolveStatus as outlookResolveStatus } from '../../src/plugins/OutlookPlugin.js'
+import { resolveStatus as facebookResolveStatus } from '../../src/plugins/FacebookEventsPlugin.js'
 
 /**
  * Checks whether an IP address belongs to a private, loopback, link-local, or
@@ -137,32 +139,24 @@ registerPlugin({ id: 'proton-calendar', fetchEvents: fetchICSEvents })
 
 // Outlook always exports STATUS:CONFIRMED; the proprietary
 // X-MICROSOFT-CDO-BUSYSTATUS property carries the true busy state.
+// resolveStatus is imported from src/plugins/OutlookPlugin.js so both the
+// client-side plugin and the server use the exact same logic.
 registerPlugin({
   id: 'outlook',
   fetchEvents(config, dateRange, sourceId) {
-    return fetchICSEvents(config, dateRange, sourceId, {
-      resolveStatus(status, getProp) {
-        const busyStatus = getProp('x-microsoft-cdo-busystatus')
-        if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
-        if (busyStatus === 'FREE') return 'CANCELLED'
-        return status
-      },
-    })
+    return fetchICSEvents(config, dateRange, sourceId, { resolveStatus: outlookResolveStatus })
   },
 })
 
 // Facebook emits a top-level PARTSTAT:TENTATIVE property on the VEVENT
 // (distinct from PARTSTAT as a parameter on an ATTENDEE line) alongside
 // STATUS:CONFIRMED to indicate tentative acceptance.
+// resolveStatus is imported from src/plugins/FacebookEventsPlugin.js so both
+// the client-side plugin and the server use the exact same logic.
 registerPlugin({
   id: 'facebook-events',
   fetchEvents(config, dateRange, sourceId) {
-    return fetchICSEvents(config, dateRange, sourceId, {
-      resolveStatus(status, getProp) {
-        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
-        return status
-      },
-    })
+    return fetchICSEvents(config, dateRange, sourceId, { resolveStatus: facebookResolveStatus })
   },
 })
 

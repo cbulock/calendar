@@ -7,6 +7,26 @@
 
 import { parseICSData, expandEvents } from './utils/icsParser.js'
 
+/**
+ * Translates Facebook-specific attendance properties into a canonical RFC 5545
+ * status string.  Exported so the server-side plugin registry can import and
+ * reuse the exact same logic without duplication.
+ *
+ * Facebook emits a top-level PARTSTAT:TENTATIVE property on the VEVENT
+ * (distinct from PARTSTAT as a parameter on an ATTENDEE line) alongside
+ * STATUS:CONFIRMED to indicate tentative acceptance.
+ *
+ * @param {string} status    - The RFC 5545 STATUS value from the VEVENT
+ * @param {function} getProp - Returns the uppercased value of a VEVENT property
+ * @returns {string} Resolved status ('TENTATIVE' or the original status)
+ */
+export function resolveStatus(status, getProp) {
+  if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
+  return status
+}
+
+// Alias so the plugin object can reference the exported function by a short name.
+const facebookResolveStatus = resolveStatus
 const FacebookEventsPlugin = {
   id: 'facebook-events',
   name: 'Facebook Events',
@@ -57,15 +77,7 @@ const FacebookEventsPlugin = {
       throw new Error(`Failed to fetch Facebook Events: ${response.statusText}`)
     }
     const icsText = await response.text()
-    const rawEvents = parseICSData(icsText, this.id, {
-      // Facebook emits a top-level PARTSTAT:TENTATIVE property on the VEVENT
-      // (distinct from PARTSTAT as a parameter on an ATTENDEE line) to indicate
-      // the user's tentative acceptance alongside STATUS:CONFIRMED.
-      resolveStatus(status, getProp) {
-        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
-        return status
-      },
-    })
+    const rawEvents = parseICSData(icsText, this.id, { resolveStatus: facebookResolveStatus })
     const events = expandEvents(rawEvents, start, end)
     return events.filter((e) => e.end >= start && e.start <= end)
   },
