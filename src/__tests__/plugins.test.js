@@ -210,6 +210,55 @@ describe('Outlook Plugin', () => {
     const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
     expect(events).toHaveLength(0)
   })
+
+  it('shows a single-instance unanswered invite (INSTTYPE=0, BUSYSTATUS:FREE, INTENDEDSTATUS:BUSY) as TENTATIVE', async () => {
+    // Regression: a single non-recurring meeting invite that the recipient has not
+    // accepted yet carries BUSYSTATUS:FREE (time is still free on recipient's calendar)
+    // and INTENDEDSTATUS:BUSY (the organiser intended to block the time slot).
+    // It must appear as TENTATIVE, not be filtered as cancelled.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:outlook-single-unanswered@test',
+      'SUMMARY:Team Lunch',
+      'DTSTART:20260415T120000Z',
+      'DTEND:20260415T130000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:0',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(1)
+    expect(events[0].title).toBe('Team Lunch')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('does not resurface an RFC-cancelled event when BUSYSTATUS is TENTATIVE', async () => {
+    // Regression: STATUS:CANCELLED must never be overridden by BUSYSTATUS — an
+    // event that Outlook has properly cancelled (STATUS:CANCELLED) should remain
+    // hidden even if X-MICROSOFT-CDO-BUSYSTATUS happens to say TENTATIVE.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:outlook-rfc-cancelled@test',
+      'SUMMARY:Cancelled by organiser',
+      'DTSTART:20260415T140000Z',
+      'DTEND:20260415T150000Z',
+      'STATUS:CANCELLED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
+  })
 })
 
 describe('Facebook Events Plugin', () => {

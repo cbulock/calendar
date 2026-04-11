@@ -21,22 +21,28 @@ import { parseICSData, expandEvents } from './utils/icsParser.js'
  * @returns {string} Resolved status ('TENTATIVE', 'CONFIRMED', 'CANCELLED', …)
  */
 export function resolveStatus(status, getProp) {
+  // Never upgrade a genuinely RFC-cancelled event.  STATUS:CANCELLED takes
+  // precedence over any Outlook-proprietary property (e.g. BUSYSTATUS:TENTATIVE
+  // on a cancelled recurring-exception VEVENT must not resurface as visible).
+  if (status === 'CANCELLED') return 'CANCELLED'
+
   const busyStatus = getProp('x-microsoft-cdo-busystatus')
   if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
   if (busyStatus === 'FREE') {
-    // X-MICROSOFT-CDO-INSTTYPE=1 marks this VEVENT as the master of a
-    // recurring series.  Treat FREE as CANCELLED for any event whose
-    // INSTTYPE is not '1' (i.e. a declined or removed single occurrence).
     const instType = getProp('x-microsoft-cdo-insttype')
-    if (instType !== '1') return 'CANCELLED'
-    // For recurring series masters (INSTTYPE=1), FREE can mean two things:
-    //   1. The organiser intended the event to block time (INTENDEDSTATUS=BUSY)
-    //      but the recipient hasn't responded yet — show as TENTATIVE.
-    //   2. The event is genuinely transparent (INTENDEDSTATUS=FREE or absent)
-    //      — keep the original status (typically CONFIRMED).
     const intendedStatus = getProp('x-microsoft-cdo-intendedstatus')
+    // When the organiser intended this slot to be busy, the recipient simply
+    // hasn't responded yet — surface it as TENTATIVE regardless of INSTTYPE.
+    // This covers both single-instance unanswered invites (INSTTYPE=0) and
+    // recurring-series masters (INSTTYPE=1).
     if (intendedStatus === 'BUSY') return 'TENTATIVE'
-    return status
+    // X-MICROSOFT-CDO-INSTTYPE=1 is the recurring series master; when FREE
+    // and not intended as busy, the series is genuinely transparent — keep
+    // the original status (typically CONFIRMED) so it still appears.
+    if (instType === '1') return status
+    // All other INSTTYPE values (0=single, 2=exception, absent, etc.) with
+    // FREE and no BUSY intended status are declined or removed occurrences.
+    return 'CANCELLED'
   }
   return status
 }
