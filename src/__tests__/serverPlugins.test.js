@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Server-side plugin registry tests.
  *
