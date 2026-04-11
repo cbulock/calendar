@@ -119,16 +119,16 @@ describe('Outlook Plugin', () => {
     expect(events).toHaveLength(0)
   })
 
-  it('does not filter out a master recurring series (INSTTYPE=1) with X-MICROSOFT-CDO-BUSYSTATUS:FREE', async () => {
-    // Regression test: a recurring event created in Outlook with TRANSP:TRANSPARENT /
-    // X-MICROSOFT-CDO-BUSYSTATUS:FREE must not be treated as cancelled.
-    // X-MICROSOFT-CDO-INSTTYPE=1 identifies the VEVENT as the master of a recurring
-    // series, where FREE means time transparency (does not block calendar time), not
-    // that the series has been cancelled or declined.
+  it('shows a recurring unanswered invite (INSTTYPE=1, BUSYSTATUS:FREE, INTENDEDSTATUS:BUSY) as TENTATIVE', async () => {
+    // Regression test: a recurring Outlook meeting invite that the recipient has not
+    // yet responded to carries BUSYSTATUS:FREE (the recipient's time is still free)
+    // and INTENDEDSTATUS:BUSY (the organiser intended this to block time).
+    // The event must appear on the calendar as TENTATIVE — not filtered as cancelled
+    // and not shown as a fully confirmed event.
     //
     // Reproduces the bug where a monthly recurring event
     // (RRULE:FREQ=MONTHLY;BYDAY=2WE) with BUSYSTATUS:FREE + INSTTYPE:1 was not
-    // showing on the calendar.
+    // showing on the calendar (and when shown, was incorrectly CONFIRMED).
     const ics = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -154,12 +154,40 @@ describe('Outlook Plugin', () => {
     // Range covers April 2026 — the 2nd Wednesday of April 2026 is the 8th.
     const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
     const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
-    // The series must appear; it must NOT be filtered as cancelled.
+    // The series must appear as TENTATIVE; it must NOT be filtered as cancelled.
     expect(events).toHaveLength(1)
     expect(events[0].title).toBe('Test')
+    expect(events[0].status).toBe('TENTATIVE')
     // DTSTART = 13:30 US Mountain Standard Time (America/Phoenix, UTC-7) = 20:30Z
     expect(events[0].start.toISOString()).toBe('2026-04-08T20:30:00.000Z')
     expect(events[0].end.toISOString()).toBe('2026-04-08T21:30:00.000Z')
+  })
+
+  it('keeps STATUS:CONFIRMED for a transparent recurring series (INSTTYPE=1, BUSYSTATUS:FREE, INTENDEDSTATUS:FREE)', async () => {
+    // A recurring event the user created themselves and set as TRANSP:TRANSPARENT
+    // has both BUSYSTATUS:FREE and INTENDEDSTATUS:FREE.  This is a genuinely
+    // transparent event, not an unanswered invite, so status stays CONFIRMED.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:outlook-transparent-recurring@test',
+      'SUMMARY:Transparent Recurring',
+      'DTSTART:20260408T140000Z',
+      'DTEND:20260408T150000Z',
+      'RRULE:FREQ=WEEKLY',
+      'STATUS:CONFIRMED',
+      'TRANSP:TRANSPARENT',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:FREE',
+      'X-MICROSOFT-CDO-INSTTYPE:1',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events.length).toBeGreaterThan(0)
+    expect(events[0].status).toBe('CONFIRMED')
   })
 
   it('still filters out a single-instance event (no INSTTYPE) with X-MICROSOFT-CDO-BUSYSTATUS:FREE', async () => {

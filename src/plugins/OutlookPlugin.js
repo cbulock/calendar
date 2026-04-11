@@ -63,13 +63,18 @@ const OutlookPlugin = {
         if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
         if (busyStatus === 'FREE') {
           // X-MICROSOFT-CDO-INSTTYPE=1 marks this VEVENT as the master of a
-          // recurring series.  FREE on a master series means the event is
-          // transparent (does not block calendar time), not that it has been
-          // cancelled or declined.  Treat FREE as CANCELLED for any event
-          // whose INSTTYPE is not '1'.
+          // recurring series.  Treat FREE as CANCELLED for any event whose
+          // INSTTYPE is not '1' (i.e. a declined or removed single occurrence).
           const instType = getProp('x-microsoft-cdo-insttype')
-          if (instType === '1') return status
-          return 'CANCELLED'
+          if (instType !== '1') return 'CANCELLED'
+          // For recurring series masters (INSTTYPE=1), FREE can mean two things:
+          //   1. The organiser intended the event to block time (INTENDEDSTATUS=BUSY)
+          //      but the recipient hasn't responded yet — show as TENTATIVE.
+          //   2. The event is genuinely transparent (INTENDEDSTATUS=FREE or absent)
+          //      — keep the original status (typically CONFIRMED).
+          const intendedStatus = getProp('x-microsoft-cdo-intendedstatus')
+          if (intendedStatus === 'BUSY') return 'TENTATIVE'
+          return status
         }
         return status
       },
