@@ -8,6 +8,8 @@
 import { lookup } from 'node:dns/promises'
 import { parseICSData } from '../icsParser.js'
 import { expandEvents } from '../../src/plugins/utils/icsParser.js'
+import { resolveStatus as outlookResolveStatus } from '../../src/plugins/OutlookPlugin.js'
+import { resolveStatus as facebookResolveStatus } from '../../src/plugins/FacebookEventsPlugin.js'
 
 /**
  * Checks whether an IP address belongs to a private, loopback, link-local, or
@@ -137,46 +139,24 @@ registerPlugin({ id: 'proton-calendar', fetchEvents: fetchICSEvents })
 
 // Outlook always exports STATUS:CONFIRMED; the proprietary
 // X-MICROSOFT-CDO-BUSYSTATUS property carries the true busy state.
+// resolveStatus is imported from src/plugins/OutlookPlugin.js so both the
+// client-side plugin and the server use the exact same logic.
 registerPlugin({
   id: 'outlook',
   fetchEvents(config, dateRange, sourceId) {
-    return fetchICSEvents(config, dateRange, sourceId, {
-      resolveStatus(status, getProp) {
-        const busyStatus = getProp('x-microsoft-cdo-busystatus')
-        if (busyStatus === 'TENTATIVE') return 'TENTATIVE'
-        if (busyStatus === 'FREE') {
-          // X-MICROSOFT-CDO-INSTTYPE=1 marks this VEVENT as the master of a
-          // recurring series.  Treat FREE as CANCELLED for any event whose
-          // INSTTYPE is not '1' (i.e. a declined or removed single occurrence).
-          const instType = getProp('x-microsoft-cdo-insttype')
-          if (instType !== '1') return 'CANCELLED'
-          // For recurring series masters (INSTTYPE=1), FREE can mean two things:
-          //   1. The organiser intended the event to block time (INTENDEDSTATUS=BUSY)
-          //      but the recipient hasn't responded yet — show as TENTATIVE.
-          //   2. The event is genuinely transparent (INTENDEDSTATUS=FREE or absent)
-          //      — keep the original status (typically CONFIRMED).
-          const intendedStatus = getProp('x-microsoft-cdo-intendedstatus')
-          if (intendedStatus === 'BUSY') return 'TENTATIVE'
-          return status
-        }
-        return status
-      },
-    })
+    return fetchICSEvents(config, dateRange, sourceId, { resolveStatus: outlookResolveStatus })
   },
 })
 
 // Facebook emits a top-level PARTSTAT:TENTATIVE property on the VEVENT
 // (distinct from PARTSTAT as a parameter on an ATTENDEE line) alongside
 // STATUS:CONFIRMED to indicate tentative acceptance.
+// resolveStatus is imported from src/plugins/FacebookEventsPlugin.js so both
+// the client-side plugin and the server use the exact same logic.
 registerPlugin({
   id: 'facebook-events',
   fetchEvents(config, dateRange, sourceId) {
-    return fetchICSEvents(config, dateRange, sourceId, {
-      resolveStatus(status, getProp) {
-        if (getProp('partstat') === 'TENTATIVE') return 'TENTATIVE'
-        return status
-      },
-    })
+    return fetchICSEvents(config, dateRange, sourceId, { resolveStatus: facebookResolveStatus })
   },
 })
 
