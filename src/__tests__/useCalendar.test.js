@@ -7,18 +7,30 @@ function makeFetchMock() {
   return vi.fn(async (url, options = {}) => {
     const method = (options.method || 'GET').toUpperCase()
 
-    // POST /api/sources
-    if (method === 'POST' && url.endsWith('/api/sources')) {
-      const body = JSON.parse(options.body)
-      const newSource = {
-        id: `${body.pluginId}-${Date.now()}`,
-        pluginId: body.pluginId,
-        label: body.label || body.config?.calendarName || body.pluginId,
-        config: body.config,
-        enabled: true,
+    // POST /api/sources/:id/refresh  OR  POST /api/sources (add)
+    if (method === 'POST') {
+      // /api/sources/:id/refresh
+      const refreshMatch = url.match(/\/api\/sources\/([^?/]+)\/refresh$/)
+      if (refreshMatch) {
+        const id = refreshMatch[1]
+        const source = serverSources.find((s) => s.id === id)
+        if (!source) return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) }
+        if (!source.enabled) return { ok: false, status: 400, json: async () => ({ error: 'Source is disabled.' }) }
+        return { ok: true, status: 200, json: async () => ({ ok: true }) }
       }
-      serverSources.push(newSource)
-      return { ok: true, status: 201, json: async () => newSource }
+      // POST /api/sources
+      if (url.endsWith('/api/sources')) {
+        const body = JSON.parse(options.body)
+        const newSource = {
+          id: `${body.pluginId}-${Date.now()}`,
+          pluginId: body.pluginId,
+          label: body.label || body.config?.calendarName || body.pluginId,
+          config: body.config,
+          enabled: true,
+        }
+        serverSources.push(newSource)
+        return { ok: true, status: 201, json: async () => newSource }
+      }
     }
 
     // GET /api/sources
@@ -125,6 +137,37 @@ describe('useCalendar composable', () => {
     const id = sources.value[sources.value.length - 1].id
     await updateSource(id, { label: 'Updated Label' })
     expect(sources.value.find((s) => s.id === id).label).toBe('Updated Label')
+  })
+
+  it('refreshSource posts to the refresh endpoint successfully', async () => {
+    const { sources, error, addSource, refreshSource } = useCalendar()
+    error.value = null
+    await addSource({ pluginId: 'outlook', config: { icsUrl: 'https://example.com/cal.ics' } })
+    const id = sources.value[sources.value.length - 1].id
+    await expect(refreshSource(id)).resolves.toBeUndefined()
+    expect(error.value).toBeNull()
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      `/api/sources/${id}/refresh`,
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('refreshSource sets error and rethrows on non-2xx response', async () => {
+    const { error, refreshSource } = useCalendar()
+    error.value = null
+    // Provide a source id that the mock will return 404 for
+    await expect(refreshSource('nonexistent-id')).rejects.toThrow()
+    expect(error.value).not.toBeNull()
+  })
+
+  it('refreshSource sets error and rethrows when source is disabled', async () => {
+    const { sources, error, addSource, toggleSource, refreshSource } = useCalendar()
+    error.value = null
+    await addSource({ pluginId: 'outlook', config: { icsUrl: 'https://example.com/cal.ics' } })
+    const id = sources.value[sources.value.length - 1].id
+    await toggleSource(id) // disable it
+    await expect(refreshSource(id)).rejects.toThrow()
+    expect(error.value).not.toBeNull()
   })
 })
 

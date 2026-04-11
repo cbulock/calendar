@@ -92,6 +92,24 @@ async function toggleSource(sourceId) {
 }
 
 /**
+ * Force-refresh the event cache for a single calendar source.
+ * @param {string} sourceId
+ */
+async function refreshSource(sourceId) {
+  error.value = null
+  try {
+    const res = await fetch(`${API_BASE}/sources/${sourceId}/refresh`, { method: 'POST' })
+    if (!res.ok) {
+      const { error: msg } = await res.json().catch(() => ({}))
+      throw new Error(msg || `Server error: ${res.status}`)
+    }
+  } catch (err) {
+    error.value = `Failed to refresh source: ${err.message}`
+    throw err
+  }
+}
+
+/**
  * Update an existing source's config.
  * @param {string} sourceId
  * @param {object} updates - Partial updates to apply (config, label, etc.)
@@ -147,6 +165,7 @@ export function useCalendar() {
     removeSource,
     toggleSource,
     updateSource,
+    refreshSource,
     fetchEvents,
   }
 }

@@ -7,7 +7,7 @@ import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone } from '../composables/useTimezone.js'
 
 const plugins = getAllPlugins()
-const { sources, addSource, removeSource, toggleSource, loadSources } = useCalendar()
+const { sources, addSource, removeSource, toggleSource, refreshSource, loadSources } = useCalendar()
 const { timezone, setTimezone } = useTimezone()
 
 onMounted(loadSources)
@@ -37,6 +37,20 @@ onMounted(() => {
   loadSources()
   loadStatus()
 })
+
+// Track which sources are currently being refreshed
+const refreshingIds = ref(new Set())
+
+async function handleRefresh(sourceId) {
+  refreshingIds.value = new Set([...refreshingIds.value, sourceId])
+  try {
+    await refreshSource(sourceId)
+  } finally {
+    const next = new Set(refreshingIds.value)
+    next.delete(sourceId)
+    refreshingIds.value = next
+  }
+}
 
 // Build a list of available timezones, falling back to a set of common ones
 let availableTimezones
@@ -166,14 +180,25 @@ function applyTimezone() {
             <span class="source-item__plugin">{{ source.pluginId }}</span>
           </div>
           <div class="source-item__actions">
+            <label class="toggle-switch">
+              <input
+                type="checkbox"
+                class="toggle-switch__input"
+                :checked="source.enabled"
+                @change="toggleSource(source.id)"
+                :aria-label="source.enabled ? 'Disable ' + source.label : 'Enable ' + source.label"
+              />
+              <span class="toggle-switch__track"></span>
+            </label>
             <button
-              class="toggle-btn"
-              :class="source.enabled ? 'toggle-btn--on' : 'toggle-btn--off'"
-              @click="toggleSource(source.id)"
-              :aria-label="source.enabled ? 'Disable ' + source.label : 'Enable ' + source.label"
-              :aria-pressed="source.enabled"
+              class="refresh-btn"
+              :class="{ 'refresh-btn--loading': refreshingIds.has(source.id) }"
+              @click="handleRefresh(source.id)"
+              :disabled="!source.enabled || refreshingIds.has(source.id)"
+              :aria-label="'Refresh ' + source.label"
+              title="Refresh calendar"
             >
-              {{ source.enabled ? 'Enabled' : 'Disabled' }}
+              ↻
             </button>
             <button
               class="danger-btn"
@@ -318,36 +343,105 @@ function applyTimezone() {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
+  align-items: center;
 }
 
-.toggle-btn {
-  padding: 0.375rem 0.875rem;
-  border-radius: 6px;
-  border: 1.5px solid transparent;
-  font-size: 0.8rem;
-  font-weight: 600;
+/* Toggle switch */
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  user-select: none;
 }
 
-.toggle-btn--on {
-  background: #dcfce7;
-  color: #15803d;
-  border-color: #bbf7d0;
+.toggle-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
-.toggle-btn--on:hover {
-  background: #bbf7d0;
+.toggle-switch__track {
+  position: relative;
+  display: inline-block;
+  width: 2.25rem;
+  height: 1.25rem;
+  background: #cbd5e1;
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
 }
 
-.toggle-btn--off {
-  background: #f1f5f9;
+.toggle-switch__track::after {
+  content: '';
+  position: absolute;
+  top: 0.175rem;
+  left: 0.175rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch__input:checked + .toggle-switch__track {
+  background: #22c55e;
+}
+
+.toggle-switch__input:checked + .toggle-switch__track::after {
+  transform: translateX(1rem);
+}
+
+.toggle-switch:hover .toggle-switch__track {
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.15);
+}
+
+.toggle-switch__input:focus-visible + .toggle-switch__track {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+/* Refresh button */
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
   color: #64748b;
-  border-color: #e2e8f0;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
 }
 
-.toggle-btn--off:hover {
-  background: #e2e8f0;
+.refresh-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.refresh-btn--loading {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 .danger-btn {

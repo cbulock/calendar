@@ -17,7 +17,7 @@
 import express from 'express'
 import dayjs from 'dayjs'
 import { loadSources, saveSources } from './storage.js'
-import { startScheduler, getCachedEvents, refresh, getStatus } from './scheduler.js'
+import { startScheduler, getCachedEvents, refresh, refreshSource, getStatus } from './scheduler.js'
 
 const app = express()
 app.use(express.json())
@@ -90,6 +90,24 @@ app.delete('/api/sources/:id', (req, res) => {
   // Kick off a cache refresh asynchronously (eventual consistency — see POST handler).
   refresh().catch((err) => console.error('[scheduler] Post-delete refresh failed:', err))
   res.status(204).end()
+})
+
+/** POST /api/sources/:id/refresh — force-refresh a single calendar source */
+app.post('/api/sources/:id/refresh', async (req, res) => {
+  const sources = loadSources()
+  const source = sources.find((s) => s.id === req.params.id)
+  if (!source) {
+    return res.status(404).json({ error: 'Source not found.' })
+  }
+  if (source.enabled === false) {
+    return res.status(400).json({ error: 'Source is disabled.' })
+  }
+  try {
+    await refreshSource(req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 /* ------------------------------------------------------------------ */
