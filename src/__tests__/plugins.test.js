@@ -259,6 +259,50 @@ describe('Outlook Plugin', () => {
     const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
     expect(events).toHaveLength(0)
   })
+
+  it('hides a cancelled recurring exception (INSTTYPE=3, BUSYSTATUS:FREE, INTENDEDSTATUS:BUSY, RECURRENCE-ID)', async () => {
+    // Regression: Outlook emits INSTTYPE=3 for a cancelled occurrence of a
+    // recurring series.  The VEVENT also carries INTENDEDSTATUS:BUSY and a
+    // RECURRENCE-ID.  The previous resolveStatus logic checked INTENDEDSTATUS
+    // before INSTTYPE, causing the cancelled occurrence to show as TENTATIVE.
+    // It must be hidden entirely from the calendar.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Test//Test//EN',
+      'BEGIN:VEVENT',
+      'DESCRIPTION:Test\\n',
+      'UID:040000008200E00074C5B7101A82E00800000000E05F7A315CC0DC0100000000000000001000',
+      ' 00007DB363D6E0BDBA45988BBD00F292423B',
+      'RECURRENCE-ID;TZID=Central Standard Time:20260410T100000',
+      'SUMMARY:Canceled: Test',
+      'DTSTART;TZID=Central Standard Time:20260410T100000',
+      'DTEND;TZID=Central Standard Time:20260410T103000',
+      'CLASS:PUBLIC',
+      'PRIORITY:5',
+      'DTSTAMP:20260409T010309Z',
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+      'SEQUENCE:6',
+      'LOCATION:Microsoft Teams Meeting',
+      'X-MICROSOFT-CDO-APPT-SEQUENCE:6',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-ALLDAYEVENT:FALSE',
+      'X-MICROSOFT-CDO-IMPORTANCE:1',
+      'X-MICROSOFT-CDO-INSTTYPE:3',
+      'X-MICROSOFT-DONOTFORWARDMEETING:FALSE',
+      'X-MICROSOFT-DISALLOW-COUNTER:FALSE',
+      'X-MICROSOFT-REQUESTEDATTENDANCEMODE:DEFAULT',
+      'X-MICROSOFT-ISRESPONSEREQUESTED:FALSE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
+  })
 })
 
 describe('Facebook Events Plugin', () => {
