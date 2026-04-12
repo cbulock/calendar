@@ -38,6 +38,8 @@ export function resolveStatus(status, getProp) {
     // present do we return CANCELLED; otherwise we fall through to the
     // INTENDEDSTATUS check so unanswered/rescheduled exceptions surface as TENTATIVE.
     if (instType === '3') {
+      // getProp() always returns an uppercased, trimmed string (never null), so
+      // the uppercase literal comparisons below are correct and safe.
       const summary = getProp('summary')
       if (summary.startsWith('CANCELED:') || summary.startsWith('CANCELLED:')) return 'CANCELLED'
     }
