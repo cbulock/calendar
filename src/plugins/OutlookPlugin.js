@@ -36,14 +36,8 @@ export function resolveStatus(status, getProp) {
     // this before the INTENDEDSTATUS guard is essential: Outlook sometimes emits
     // INTENDEDSTATUS:BUSY on these VEVENTs, which previously caused the cancelled
     // occurrence to be surfaced as TENTATIVE rather than hidden.
-    if (instType === '3') {
-      console.debug('[OutlookPlugin] resolveStatus: INSTTYPE=3 → CANCELLED (cancelled recurring exception)')
-      return 'CANCELLED'
-    }
+    if (instType === '3') return 'CANCELLED'
     const intendedStatus = getProp('x-microsoft-cdo-intendedstatus')
-    console.debug(
-      `[OutlookPlugin] resolveStatus: BUSYSTATUS=FREE INSTTYPE=${instType || '(none)'} INTENDEDSTATUS=${intendedStatus || '(none)'}`,
-    )
     // When the organiser intended this slot to be busy, the recipient simply
     // hasn't responded yet — surface it as TENTATIVE regardless of INSTTYPE.
     // This covers both single-instance unanswered invites (INSTTYPE=0) and
