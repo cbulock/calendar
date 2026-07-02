@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent, ref } from 'vue'
+import { defineComponent, nextTick, ref } from 'vue'
 
 // ---------------------------------------------------------------------------
 // Stubs & mocks
@@ -164,6 +164,8 @@ describe('DayView', () => {
 
   it('calls fetchEvents on mount', async () => {
     mountDayView()
+    await nextTick()
+    await Promise.resolve()
     expect(mockFetchEvents).toHaveBeenCalledOnce()
     const [start, end] = mockFetchEvents.mock.calls[0]
     const dayAfterTomorrowMidnight = new Date(

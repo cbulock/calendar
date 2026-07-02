@@ -97,6 +97,8 @@ input:focus-visible {
 .dark-mode input:focus-visible {
   outline-color: #818cf8;
 }
+
+/*
  * Applied to the calendar view wrapper to preserve e-ink display compatibility.
  */
 .eink-mode {
@@ -137,4 +139,3 @@ input:focus-visible {
   color: #000;
   text-decoration: none;
 }
-

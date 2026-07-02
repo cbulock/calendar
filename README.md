@@ -8,6 +8,7 @@ A Vue 3 calendar application that merges events from multiple remote calendar so
 - **Plugin system** — extensible architecture for adding new calendar providers
 - **Configuration UI** — add, enable/disable, and remove calendar sources without editing code
 - **Eink-optimized display** — black-and-white only, no animations, high-contrast, serif typography
+- **On-demand day render endpoint** — server-side PNG rendering for the day view, ready for e-ink workflows
 
 ## Built-in Calendar Plugins
 
@@ -42,6 +43,25 @@ npm run build
 ```bash
 npm test
 ```
+
+## Render Endpoint
+
+The app exposes an on-demand day-view render endpoint:
+
+```text
+GET /api/render/day.png
+```
+
+Useful query parameters:
+
+- `timezone=America/New_York` to force the display timezone for the render
+- `mode=gray4` or `mode=bw` to choose 4-gray or 1-bit output
+- `width`, `height`, `timeoutMs`, `stabilizeMs`, and `threshold` to tune the render
+
+Runtime environment:
+
+- `CALENDAR_RENDER_BASE_URL` overrides the frontend URL used by the server-side renderer
+- `CALENDAR_RENDER_BROWSER_PATH` overrides the Chrome/Chromium executable path
 
 ## Contributing
 

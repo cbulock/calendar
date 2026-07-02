@@ -18,32 +18,75 @@ dayjs.extend(timezone)
 
 const STORAGE_KEY = 'calendar_timezone'
 
+export function isValidTimezone(tz) {
+  if (typeof tz !== 'string') return false
+  const candidate = tz.trim()
+  if (!candidate) return false
+  try {
+    dayjs.tz('2025-01-15T12:00:00', candidate)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function normalizeTimezone(tz, fallback = 'UTC') {
+  return isValidTimezone(tz) ? tz.trim() : fallback
+}
+
+function detectHashQueryTimezone() {
+  if (typeof window === 'undefined') return null
+
+  const hash = window.location.hash || ''
+  const queryIndex = hash.indexOf('?')
+  if (queryIndex === -1) return null
+
+  const params = new URLSearchParams(hash.slice(queryIndex + 1))
+  const timezone = params.get('timezone')
+  return timezone || null
+}
+
 /**
  * Detect the browser's IANA timezone string.
  * @returns {string}
  */
 function detectBrowserTimezone() {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone
+    return normalizeTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone)
   } catch {
     return 'UTC'
   }
 }
 
-/** @type {import('vue').Ref<string>} */
-const timezoneRef = ref(
-  (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY)) ||
+function resolveInitialTimezone() {
+  const candidates = [
+    detectHashQueryTimezone(),
+    typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null,
     detectBrowserTimezone(),
-)
+    'UTC',
+  ]
+
+  for (const candidate of candidates) {
+    if (isValidTimezone(candidate)) {
+      return candidate.trim()
+    }
+  }
+
+  return 'UTC'
+}
+
+/** @type {import('vue').Ref<string>} */
+const timezoneRef = ref(resolveInitialTimezone())
 
 /**
  * Set the preferred timezone and persist it.
  * @param {string} tz - IANA timezone name (e.g. "America/New_York")
  */
 function setTimezone(tz) {
-  timezoneRef.value = tz
+  const nextTimezone = normalizeTimezone(tz, detectBrowserTimezone())
+  timezoneRef.value = nextTimezone
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, tz)
+    localStorage.setItem(STORAGE_KEY, nextTimezone)
   }
 }
 
@@ -79,7 +122,7 @@ export function midnightInTimezone(year, month, day, tz) {
  * @returns {{ year: number, month: number, day: number }}
  */
 export function getTodayInTimezone(tz) {
-  const d = dayjs().tz(tz)
+  const d = dayjs().tz(normalizeTimezone(tz))
   return { year: d.year(), month: d.month(), day: d.date() }
 }
 
