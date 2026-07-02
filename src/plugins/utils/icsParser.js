@@ -842,8 +842,19 @@ export function parseICSData(icsText, sourceId, options = {}) {
     // Allow each plugin to apply vendor-specific status overrides by passing
     // options.resolveStatus(currentStatus, getProp) to parseICSData.
     if (typeof options.resolveStatus === 'function') {
-      const getProp = (name) =>
-        (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
+      // getProp(name) returns the uppercased first value of a VEVENT property.
+      // getProp('property:parameter') returns the uppercased value of the named
+      // parameter on the first instance of the property (e.g. 'attendee:partstat').
+      const getProp = (name) => {
+        const colonIdx = name.indexOf(':')
+        if (colonIdx !== -1) {
+          const propName  = name.slice(0, colonIdx).toLowerCase()
+          const paramName = name.slice(colonIdx + 1).toLowerCase()
+          const prop = vevent.getFirstProperty(propName)
+          return prop ? (prop.getParameter(paramName) ?? '').toString().trim().toUpperCase() : ''
+        }
+        return (vevent.getFirstPropertyValue(name.toLowerCase()) ?? '').toString().trim().toUpperCase()
+      }
       const resolvedStatus = options.resolveStatus(status, getProp)
       if (typeof resolvedStatus === 'string') {
         status = resolvedStatus.trim().toUpperCase()

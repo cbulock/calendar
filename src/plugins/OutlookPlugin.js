@@ -44,11 +44,17 @@ export function resolveStatus(status, getProp) {
       if (summary.startsWith('CANCELED:') || summary.startsWith('CANCELLED:')) return 'CANCELLED'
     }
     const intendedStatus = getProp('x-microsoft-cdo-intendedstatus')
-    // When the organiser intended this slot to be busy, the recipient simply
-    // hasn't responded yet — surface it as TENTATIVE regardless of INSTTYPE.
-    // This covers both single-instance unanswered invites (INSTTYPE=0) and
-    // recurring-series masters (INSTTYPE=1).
-    if (intendedStatus === 'BUSY') return 'TENTATIVE'
+    // When the organiser intended this slot to be busy, the recipient either
+    // hasn't responded yet (PARTSTAT=NEEDS-ACTION) or has explicitly declined
+    // (PARTSTAT=DECLINED).  Unanswered invites should be surfaced as TENTATIVE
+    // so the user can see and act on them; declined invites should be hidden.
+    if (intendedStatus === 'BUSY') {
+      const attendeePartstat = getProp('attendee:partstat')
+      // Explicitly declined → treat as cancelled/hidden.
+      if (attendeePartstat === 'DECLINED') return 'CANCELLED'
+      // NEEDS-ACTION, TENTATIVE, ACCEPTED, or absent → keep visible as TENTATIVE.
+      return 'TENTATIVE'
+    }
     // X-MICROSOFT-CDO-INSTTYPE=1 is the recurring series master; when FREE
     // and not intended as busy, the series is genuinely transparent — keep
     // the original status (typically CONFIRMED) so it still appears.

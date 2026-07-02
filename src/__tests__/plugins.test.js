@@ -260,6 +260,33 @@ describe('Outlook Plugin', () => {
     expect(events).toHaveLength(0)
   })
 
+  it('hides a declined single-instance meeting (INTENDEDSTATUS:BUSY, ATTENDEE PARTSTAT:DECLINED)', async () => {
+    // Regression: a meeting that the recipient explicitly declined carries
+    // BUSYSTATUS:FREE + INTENDEDSTATUS:BUSY (organiser still wants them there)
+    // but ATTENDEE;PARTSTAT=DECLINED.  Declined meetings must be hidden, not
+    // shown as TENTATIVE.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:outlook-declined-single@test',
+      'SUMMARY:Declined Meeting',
+      'DTSTART:20260415T140000Z',
+      'DTEND:20260415T150000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:0',
+      'ATTENDEE;PARTSTAT=DECLINED;ROLE=REQ-PARTICIPANT:mailto:me@example.com',
+      'ORGANIZER:mailto:organizer@example.com',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
+  })
+
   it('hides a cancelled recurring exception (INSTTYPE=3, BUSYSTATUS:FREE, INTENDEDSTATUS:BUSY, RECURRENCE-ID)', async () => {
     // Regression: Outlook emits INSTTYPE=3 for a cancelled occurrence of a
     // recurring series.  The VEVENT also carries INTENDEDSTATUS:BUSY and a
@@ -302,6 +329,47 @@ describe('Outlook Plugin', () => {
     const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
     const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
     expect(events).toHaveLength(0)
+  })
+
+  it('hides a declined exception occurrence of a recurring series (INSTTYPE:2, ATTENDEE PARTSTAT:DECLINED)', async () => {
+    // Regression: when a specific occurrence in a recurring series is rescheduled
+    // and the attendee declines the exception, it carries RECURRENCE-ID + INSTTYPE:2
+    // + BUSYSTATUS:FREE + INTENDEDSTATUS:BUSY + ATTENDEE PARTSTAT:DECLINED.
+    // The exception must be hidden, not shown as TENTATIVE.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:outlook-recurring-declined@test',
+      'SUMMARY:Weekly Standup',
+      'DTSTART:20260408T090000Z',
+      'DTEND:20260408T093000Z',
+      'RRULE:FREQ=WEEKLY',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:1',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:outlook-recurring-declined@test',
+      'SUMMARY:Weekly Standup (rescheduled)',
+      'DTSTART:20260415T100000Z',
+      'DTEND:20260415T103000Z',
+      'RECURRENCE-ID:20260415T090000Z',
+      'STATUS:CONFIRMED',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-INSTTYPE:2',
+      'ATTENDEE;PARTSTAT=DECLINED;ROLE=REQ-PARTICIPANT:mailto:me@example.com',
+      'ORGANIZER:mailto:organizer@example.com',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    // The declined exception must not appear; the other occurrences of the
+    // series (excluding the overridden slot) should still appear.
+    const declinedOccurrence = events.find((e) => e.title === 'Weekly Standup (rescheduled)')
+    expect(declinedOccurrence).toBeUndefined()
   })
 
   it('shows an INSTTYPE=3 exception without "Canceled:" prefix as TENTATIVE (rescheduled/orphan occurrence)', async () => {
