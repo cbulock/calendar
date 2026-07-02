@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // In-memory store simulating the server API
 let serverSources = []
+let serverEvents = []
 
 function makeFetchMock() {
   return vi.fn(async (url, options = {}) => {
@@ -56,6 +57,11 @@ function makeFetchMock() {
       return { ok: true, status: 204, json: async () => ({}) }
     }
 
+    // GET /api/events?start=...&end=...
+    if (method === 'GET' && url.includes('/api/events')) {
+      return { ok: true, status: 200, json: async () => ({ events: serverEvents, errors: [] }) }
+    }
+
     return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) }
   })
 }
@@ -66,6 +72,7 @@ const { useCalendar } = await import('../composables/useCalendar.js')
 describe('useCalendar composable', () => {
   beforeEach(() => {
     serverSources = []
+    serverEvents = []
     // Reset shared module-level state between tests
     const { sources, events } = useCalendar()
     sources.value = []
@@ -168,6 +175,36 @@ describe('useCalendar composable', () => {
     await toggleSource(id) // disable it
     await expect(refreshSource(id)).rejects.toThrow()
     expect(error.value).not.toBeNull()
+  })
+
+  it('fetchEvents filters out CANCELLED events returned by the server', async () => {
+    const now = new Date()
+    serverEvents = [
+      {
+        id: 'normal-event@test',
+        title: 'Normal Event',
+        start: now.toISOString(),
+        end: new Date(now.getTime() + 3600000).toISOString(),
+        allDay: false,
+        status: 'CONFIRMED',
+        source: 'test',
+      },
+      {
+        id: 'cancelled-event@test',
+        title: 'Cancelled Event',
+        start: now.toISOString(),
+        end: new Date(now.getTime() + 3600000).toISOString(),
+        allDay: false,
+        status: 'CANCELLED',
+        source: 'test',
+      },
+    ]
+    const { events, fetchEvents } = useCalendar()
+    const start = new Date('2025-01-01T00:00:00Z')
+    const end = new Date('2025-12-31T23:59:59Z')
+    await fetchEvents(start, end)
+    expect(events.value).toHaveLength(1)
+    expect(events.value[0].id).toBe('normal-event@test')
   })
 })
 

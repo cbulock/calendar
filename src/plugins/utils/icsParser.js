@@ -830,10 +830,12 @@ export function parseICSData(icsText, sourceId, options = {}) {
     // For events with neither DTEND nor DURATION, use the same date as the start
     if (!end) end = start
 
-    // ATTENDEE PARTSTAT → TENTATIVE fallback.
+    // ATTENDEE PARTSTAT → status fallback.
     // Facebook "interested" events carry PARTSTAT=TENTATIVE on a single attendee
     // instead of STATUS:TENTATIVE.  Outlook unanswered invites use NEEDS-ACTION.
-    // We only infer tentative from PARTSTAT for single-attendee events to avoid
+    // Declined single-attendee events (PARTSTAT=DECLINED) are treated as
+    // CANCELLED so they are hidden from the calendar.
+    // We only infer status from PARTSTAT for single-attendee events to avoid
     // false positives in multi-attendee meetings.
     let status = rawStatus
 
@@ -870,6 +872,8 @@ export function parseICSData(icsText, sourceId, options = {}) {
         const partstat = (attendeeProps[0].getParameter('partstat') || '').trim().toUpperCase()
         if (partstat === 'TENTATIVE' || partstat === 'NEEDS-ACTION') {
           status = 'TENTATIVE'
+        } else if (partstat === 'DECLINED') {
+          status = 'CANCELLED'
         }
       }
     }

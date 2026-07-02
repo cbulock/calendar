@@ -142,7 +142,9 @@ async function fetchEvents(start, end) {
     const res = await fetch(`${API_BASE}/events?${params}`)
     if (!res.ok) throw new Error(`Server error: ${res.status}`)
     const { events: evts = [], errors = [] } = await res.json()
-    events.value = evts.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end) }))
+    events.value = evts
+      .filter((e) => e.status !== 'CANCELLED')
+      .map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end) }))
     if (errors && errors.length > 0) {
       error.value = errors.join('\n')
     }

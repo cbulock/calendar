@@ -287,6 +287,50 @@ describe('Outlook Plugin', () => {
     expect(events).toHaveLength(0)
   })
 
+  it('hides a cancelled recurring exception (INSTTYPE=3, BUSYSTATUS:FREE, INTENDEDSTATUS:BUSY, RECURRENCE-ID)', async () => {
+    // Regression: Outlook emits INSTTYPE=3 for a cancelled occurrence of a
+    // recurring series.  The VEVENT also carries INTENDEDSTATUS:BUSY and a
+    // RECURRENCE-ID.  The previous resolveStatus logic checked INTENDEDSTATUS
+    // before INSTTYPE, causing the cancelled occurrence to show as TENTATIVE.
+    // It must be hidden entirely from the calendar.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Test//Test//EN',
+      'BEGIN:VEVENT',
+      'DESCRIPTION:Test\\n',
+      'UID:040000008200E00074C5B7101A82E00800000000E05F7A315CC0DC0100000000000000001000',
+      ' 00007DB363D6E0BDBA45988BBD00F292423B',
+      'RECURRENCE-ID;TZID=Central Standard Time:20260410T100000',
+      'SUMMARY:Canceled: Test',
+      'DTSTART;TZID=Central Standard Time:20260410T100000',
+      'DTEND;TZID=Central Standard Time:20260410T103000',
+      'CLASS:PUBLIC',
+      'PRIORITY:5',
+      'DTSTAMP:20260409T010309Z',
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+      'SEQUENCE:6',
+      'LOCATION:Microsoft Teams Meeting',
+      'X-MICROSOFT-CDO-APPT-SEQUENCE:6',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-ALLDAYEVENT:FALSE',
+      'X-MICROSOFT-CDO-IMPORTANCE:1',
+      'X-MICROSOFT-CDO-INSTTYPE:3',
+      'X-MICROSOFT-DONOTFORWARDMEETING:FALSE',
+      'X-MICROSOFT-DISALLOW-COUNTER:FALSE',
+      'X-MICROSOFT-REQUESTEDATTENDANCEMODE:DEFAULT',
+      'X-MICROSOFT-ISRESPONSEREQUESTED:FALSE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
+  })
+
   it('hides a declined exception occurrence of a recurring series (INSTTYPE:2, ATTENDEE PARTSTAT:DECLINED)', async () => {
     // Regression: when a specific occurrence in a recurring series is rescheduled
     // and the attendee declines the exception, it carries RECURRENCE-ID + INSTTYPE:2
@@ -326,6 +370,95 @@ describe('Outlook Plugin', () => {
     // series (excluding the overridden slot) should still appear.
     const declinedOccurrence = events.find((e) => e.title === 'Weekly Standup (rescheduled)')
     expect(declinedOccurrence).toBeUndefined()
+  })
+
+  it('shows an INSTTYPE=3 exception without "Canceled:" prefix as TENTATIVE (rescheduled/orphan occurrence)', async () => {
+    // Regression: INSTTYPE=3 alone is not a reliable cancellation signal — Outlook
+    // also emits it for rescheduled or orphan occurrences that have not been
+    // accepted.  Only the "Canceled: " SUMMARY prefix is a reliable marker.
+    // An INSTTYPE=3 occurrence whose SUMMARY does NOT start with "Canceled:" and
+    // whose INTENDEDSTATUS is BUSY must surface as TENTATIVE, not be hidden.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Test//Test//EN',
+      'BEGIN:VEVENT',
+      'DESCRIPTION:Test\\n',
+      'UID:040000008200E00074C5B7101A82E00800000000D4BE1A95EFB3DC0100000000000000001000',
+      ' 00005D29DD3A17E1044095E57523FA51F598',
+      'RECURRENCE-ID;TZID=US Mountain Standard Time:20260408T133000',
+      'SUMMARY:Test',
+      'DTSTART;TZID=US Mountain Standard Time:20260408T133000',
+      'DTEND;TZID=US Mountain Standard Time:20260408T143000',
+      'CLASS:PUBLIC',
+      'PRIORITY:5',
+      'DTSTAMP:20260409T010309Z',
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+      'SEQUENCE:0',
+      'LOCATION:Microsoft Teams Meeting',
+      'X-MICROSOFT-CDO-APPT-SEQUENCE:0',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-ALLDAYEVENT:FALSE',
+      'X-MICROSOFT-CDO-IMPORTANCE:1',
+      'X-MICROSOFT-CDO-INSTTYPE:3',
+      'X-MICROSOFT-DONOTFORWARDMEETING:FALSE',
+      'X-MICROSOFT-DISALLOW-COUNTER:FALSE',
+      'X-MICROSOFT-REQUESTEDATTENDANCEMODE:DEFAULT',
+      'X-MICROSOFT-ISRESPONSEREQUESTED:FALSE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    const dateRange = { start: new Date('2026-04-01T00:00:00Z'), end: new Date('2026-04-30T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(1)
+    expect(events[0].title).toBe('Test')
+    expect(events[0].status).toBe('TENTATIVE')
+  })
+
+  it('hides a second cancelled recurring exception (INSTTYPE=3, BUSYSTATUS:FREE, "Canceled:" summary, different date)', async () => {
+    // Regression: INSTTYPE=3 + "Canceled: " summary must be hidden regardless of
+    // which occurrence date is used.  This mirrors the first cancelled-exception
+    // test but uses a past date (March 25) to guard against date-specific regressions.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Test//Test//EN',
+      'BEGIN:VEVENT',
+      'DESCRIPTION:Test.\\n',
+      'UID:040000008200E00074C5B7101A82E0080000000013F6CA783FAADC0100000000000000001000',
+      ' 000017D2AFB899BCE646818C345073B39E5C',
+      'RECURRENCE-ID;TZID=Central Standard Time:20260325T103000',
+      'SUMMARY:Canceled: Test',
+      'DTSTART;TZID=Central Standard Time:20260325T103000',
+      'DTEND;TZID=Central Standard Time:20260325T104500',
+      'CLASS:PUBLIC',
+      'PRIORITY:5',
+      'DTSTAMP:20260409T010309Z',
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+      'SEQUENCE:2',
+      'LOCATION:Microsoft Teams Meeting',
+      'X-MICROSOFT-CDO-APPT-SEQUENCE:2',
+      'X-MICROSOFT-CDO-BUSYSTATUS:FREE',
+      'X-MICROSOFT-CDO-INTENDEDSTATUS:BUSY',
+      'X-MICROSOFT-CDO-ALLDAYEVENT:FALSE',
+      'X-MICROSOFT-CDO-IMPORTANCE:1',
+      'X-MICROSOFT-CDO-INSTTYPE:3',
+      'X-MICROSOFT-DONOTFORWARDMEETING:FALSE',
+      'X-MICROSOFT-DISALLOW-COUNTER:FALSE',
+      'X-MICROSOFT-REQUESTEDATTENDANCEMODE:DEFAULT',
+      'X-MICROSOFT-ISRESPONSEREQUESTED:FALSE',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: () => Promise.resolve(ics) })
+    // Use a date range that includes the March 25 occurrence
+    const dateRange = { start: new Date('2026-03-01T00:00:00Z'), end: new Date('2026-03-31T23:59:59Z') }
+    const events = await plugin.fetchEvents({ icsUrl: 'https://outlook.live.com/test.ics' }, dateRange)
+    expect(events).toHaveLength(0)
   })
 })
 
