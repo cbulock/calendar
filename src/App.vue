@@ -4,11 +4,12 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const isCalendarRoute = computed(() => route.name === 'calendar')
+const isRenderMode = computed(() => route.query.render === '1')
 
 const darkMode = ref(false)
 
 onMounted(() => {
-  darkMode.value = localStorage.getItem('calendar_dark_mode') === 'true'
+  darkMode.value = !isRenderMode.value && localStorage.getItem('calendar_dark_mode') === 'true'
 })
 
 function toggleDarkMode() {
@@ -18,8 +19,8 @@ function toggleDarkMode() {
 </script>
 
 <template>
-  <div class="app" :class="{ 'eink-mode': isCalendarRoute, 'dark-mode': darkMode }">
-    <nav class="app-nav">
+  <div class="app" :class="{ 'eink-mode': isCalendarRoute || isRenderMode, 'dark-mode': darkMode, 'app--render': isRenderMode }">
+    <nav v-if="!isRenderMode" class="app-nav">
       <router-link class="nav-link" :to="{ name: 'calendar' }">Monthly</router-link>
       <router-link class="nav-link" :to="{ name: 'week' }">Week</router-link>
       <router-link class="nav-link" :to="{ name: 'day' }">Day</router-link>
@@ -31,7 +32,7 @@ function toggleDarkMode() {
         :title="darkMode ? 'Light mode' : 'Dark mode'"
       >{{ darkMode ? '☀' : '☾' }}</button>
     </nav>
-    <main class="app-main">
+    <main class="app-main" :class="{ 'app-main--render': isRenderMode }">
       <router-view />
     </main>
   </div>
@@ -89,5 +90,15 @@ function toggleDarkMode() {
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+}
+
+.app--render {
+  min-height: auto;
+  background: #fff;
+}
+
+.app-main--render {
+  max-width: none;
+  padding: 0.35rem;
 }
 </style>

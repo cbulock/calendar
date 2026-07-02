@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { midnightInTimezone, getTodayInTimezone } from '../composables/useTimezone.js'
 
 describe('midnightInTimezone', () => {
@@ -47,5 +47,45 @@ describe('getTodayInTimezone', () => {
     expect(result.year).toBe(now.getUTCFullYear())
     expect(result.month).toBe(now.getUTCMonth())
     expect(result.day).toBe(now.getUTCDate())
+  })
+})
+
+describe('useTimezone', () => {
+  const originalLocation = window.location
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    })
+  })
+
+  it('prefers the hash-query timezone override during render loads', async () => {
+    const url = new URL('http://localhost/#/day?render=1&timezone=America/Chicago')
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: url,
+    })
+    localStorage.setItem('calendar_timezone', 'UTC')
+
+    const { useTimezone } = await import('../composables/useTimezone.js')
+    expect(useTimezone().timezone.value).toBe('America/Chicago')
+  })
+
+  it('ignores an invalid hash-query timezone override and keeps a valid stored timezone', async () => {
+    const url = new URL('http://localhost/#/day?render=1&timezone=Not/A_Real_Zone')
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: url,
+    })
+    localStorage.setItem('calendar_timezone', 'America/New_York')
+
+    const { useTimezone } = await import('../composables/useTimezone.js')
+    expect(useTimezone().timezone.value).toBe('America/New_York')
   })
 })

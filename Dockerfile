@@ -12,8 +12,11 @@ RUN npm run build
 # Stage 2: Final image — nginx (static files) + Node.js (API server)
 FROM node:lts-alpine
 
-# Install nginx, supervisord, and openssl (used by entrypoint for htpasswd generation)
-RUN apk add --no-cache nginx supervisor openssl
+# Install nginx, supervisord, openssl, and Chromium for server-side rendering.
+RUN apk add --no-cache nginx supervisor openssl chromium
+
+ENV CALENDAR_RENDER_BROWSER_PATH=/usr/bin/chromium-browser
+ENV CALENDAR_RENDER_BASE_URL=http://127.0.0.1
 
 # --- Frontend ---
 COPY --from=build /app/dist /usr/share/nginx/html
@@ -28,6 +31,7 @@ RUN cd /app && npm ci --omit=dev
 COPY server/ .
 # Copy src so the server can import shared modules (e.g. src/plugins/utils/icsParser.js)
 COPY src/ /app/src/
+COPY --from=build /app/dist /app/dist
 
 # supervisord config to run nginx + node together
 COPY supervisord.conf /etc/supervisord.conf

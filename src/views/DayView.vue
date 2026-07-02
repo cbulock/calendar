@@ -13,6 +13,7 @@ const { events, loading, error, fetchEvents, loadSources, enabledSources, source
 const { timezone } = useTimezone()
 
 const now = ref(new Date())
+const renderReady = ref(false)
 
 // Refresh `now` every minute so the view rolls over naturally at midnight
 let timerId
@@ -172,13 +173,22 @@ async function loadEvents() {
   await fetchEvents(fetchStart, fetchEnd)
 }
 
+async function refreshDayView() {
+  renderReady.value = false
+  try {
+    await loadSources()
+    await loadEvents()
+  } finally {
+    renderReady.value = true
+  }
+}
+
 onMounted(() => {
-  loadSources()
-  loadEvents()
+  refreshDayView()
 })
 
 // Re-fetch when the configured timezone changes because the day boundaries shift
-watch(timezone, () => { loadEvents() })
+watch(timezone, () => { refreshDayView() })
 
 // Event details modal
 const selectedEvent = ref(null)
@@ -197,7 +207,7 @@ function sourceLabelFor(sourceId) {
 </script>
 
 <template>
-  <div class="day-view">
+  <div class="day-view" :data-render-ready="renderReady && !loading ? 'true' : 'false'">
     <div v-if="loading" class="status-bar" role="status">Loading events…</div>
     <div v-if="error" class="status-bar status-bar--error" role="alert">
       <strong>Some calendars failed to load:</strong>
