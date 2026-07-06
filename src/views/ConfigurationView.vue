@@ -7,7 +7,9 @@ import { useCalendar } from '../composables/useCalendar.js'
 import { useTimezone } from '../composables/useTimezone.js'
 
 const plugins = getAllPlugins()
-const { sources, addSource, removeSource, toggleSource, refreshSource, loadSources } = useCalendar()
+const pluginMap = new Map(plugins.map((plugin) => [plugin.id, plugin]))
+const { sources, addSource, removeSource, toggleSource, updateSource, refreshSource, loadSources } =
+  useCalendar()
 const { timezone, setTimezone } = useTimezone()
 
 onMounted(loadSources)
@@ -49,6 +51,65 @@ async function handleRefresh(sourceId) {
     const next = new Set(refreshingIds.value)
     next.delete(sourceId)
     refreshingIds.value = next
+  }
+}
+
+const editingSourceId = ref(null)
+const editValues = ref({})
+const editErrors = ref([])
+const savingEdit = ref(false)
+
+function getPluginForSource(source) {
+  return pluginMap.get(source.pluginId)
+}
+
+function buildEditValues(source) {
+  const plugin = getPluginForSource(source)
+  if (!plugin) return {}
+
+  return Object.fromEntries(
+    plugin.configFields.map((field) => [
+      field.key,
+      source.config?.[field.key] ?? (field.key === 'calendarName' ? source.label : ''),
+    ]),
+  )
+}
+
+function startEditing(source) {
+  editingSourceId.value = source.id
+  editValues.value = buildEditValues(source)
+  editErrors.value = []
+}
+
+function cancelEditing() {
+  editingSourceId.value = null
+  editValues.value = {}
+  editErrors.value = []
+  savingEdit.value = false
+}
+
+async function saveEdit(source) {
+  const plugin = getPluginForSource(source)
+  if (!plugin) return
+
+  const validationResult = plugin.validateConfig(editValues.value)
+  if (!validationResult.valid) {
+    editErrors.value = validationResult.errors
+    return
+  }
+
+  savingEdit.value = true
+  editErrors.value = []
+
+  try {
+    await updateSource(source.id, {
+      config: { ...editValues.value },
+      label: editValues.value.calendarName || plugin.name,
+    })
+    cancelEditing()
+  } catch (err) {
+    editErrors.value = [err.message || 'Failed to update source.']
+    savingEdit.value = false
   }
 }
 
@@ -175,39 +236,89 @@ function applyTimezone() {
           class="source-item"
           :class="{ 'source-item--disabled': !source.enabled }"
         >
-          <div class="source-item__info">
-            <span class="source-item__label">{{ source.label }}</span>
-            <span class="source-item__plugin">{{ source.pluginId }}</span>
-          </div>
-          <div class="source-item__actions">
-            <label class="toggle-switch">
-              <input
-                type="checkbox"
-                class="toggle-switch__input"
-                :checked="source.enabled"
-                @change="toggleSource(source.id)"
-                :aria-label="source.enabled ? 'Disable ' + source.label : 'Enable ' + source.label"
-              />
-              <span class="toggle-switch__track"></span>
-            </label>
-            <button
-              class="refresh-btn"
-              :class="{ 'refresh-btn--loading': refreshingIds.has(source.id) }"
-              @click="handleRefresh(source.id)"
-              :disabled="!source.enabled || refreshingIds.has(source.id)"
-              :aria-label="'Refresh ' + source.label"
-              title="Refresh calendar"
-            >
-              ↻
-            </button>
-            <button
-              class="danger-btn"
-              @click="removeSource(source.id)"
-              :aria-label="'Remove ' + source.label"
-            >
-              Remove
-            </button>
-          </div>
+          <template v-if="editingSourceId === source.id">
+            <div class="source-item__edit">
+              <div
+                v-for="field in getPluginForSource(source)?.configFields || []"
+                :key="field.key"
+                class="form-field"
+              >
+                <label :for="`edit-${source.id}-${field.key}`" class="form-label">
+                  {{ field.label }}
+                  <span v-if="field.required" class="required-mark" aria-hidden="true">*</span>
+                </label>
+                <input
+                  :id="`edit-${source.id}-${field.key}`"
+                  v-model="editValues[field.key]"
+                  :type="field.type || 'text'"
+                  :placeholder="field.placeholder || ''"
+                  :required="field.required"
+                  class="form-input"
+                />
+              </div>
+
+              <ul v-if="editErrors.length > 0" class="error-list" role="alert">
+                <li v-for="(err, index) in editErrors" :key="index">{{ err }}</li>
+              </ul>
+
+              <div class="source-item__edit-actions">
+                <button
+                  class="apply-btn"
+                  @click="saveEdit(source)"
+                  :disabled="savingEdit"
+                  :aria-label="'Save ' + source.label"
+                >
+                  Save
+                </button>
+                <button class="secondary-btn" @click="cancelEditing" :disabled="savingEdit">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="source-item__info">
+              <span class="source-item__label">{{ source.label }}</span>
+              <span class="source-item__plugin">{{ source.pluginId }}</span>
+            </div>
+            <div class="source-item__actions">
+              <button
+                class="secondary-btn"
+                @click="startEditing(source)"
+                :aria-label="'Edit ' + source.label"
+              >
+                Edit
+              </button>
+              <label class="toggle-switch">
+                <input
+                  type="checkbox"
+                  class="toggle-switch__input"
+                  :checked="source.enabled"
+                  @change="toggleSource(source.id)"
+                  :aria-label="source.enabled ? 'Disable ' + source.label : 'Enable ' + source.label"
+                />
+                <span class="toggle-switch__track"></span>
+              </label>
+              <button
+                class="refresh-btn"
+                :class="{ 'refresh-btn--loading': refreshingIds.has(source.id) }"
+                @click="handleRefresh(source.id)"
+                :disabled="!source.enabled || refreshingIds.has(source.id)"
+                :aria-label="'Refresh ' + source.label"
+                title="Refresh calendar"
+              >
+                ↻
+              </button>
+              <button
+                class="danger-btn"
+                @click="removeSource(source.id)"
+                :aria-label="'Remove ' + source.label"
+              >
+                Remove
+              </button>
+            </div>
+          </template>
         </li>
       </ul>
     </section>
@@ -316,6 +427,18 @@ function applyTimezone() {
   opacity: 0.6;
 }
 
+.source-item__edit {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.source-item__edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .source-item__info {
   display: flex;
   flex-direction: column;
@@ -344,6 +467,55 @@ function applyTimezone() {
   gap: 0.5rem;
   flex-shrink: 0;
   align-items: center;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-label {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.required-mark {
+  color: #dc2626;
+  margin-left: 2px;
+}
+
+.form-input {
+  width: 100%;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: #fff;
+  color: #1e293b;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
+  outline: none;
+}
+
+.form-input::placeholder {
+  color: #cbd5e1;
+}
+
+.error-list {
+  background: #fff1f2;
+  border: 1.5px solid #fecaca;
+  border-radius: 7px;
+  padding: 0.6rem 0.75rem 0.6rem 1.5rem;
+  font-size: 0.825rem;
+  color: #dc2626;
+  margin: 0;
 }
 
 /* Toggle switch */
@@ -444,6 +616,23 @@ function applyTimezone() {
   to   { transform: rotate(360deg); }
 }
 
+.secondary-btn {
+  padding: 0.375rem 0.875rem;
+  border-radius: 6px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.secondary-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
 .danger-btn {
   padding: 0.375rem 0.875rem;
   border-radius: 6px;
@@ -537,4 +726,3 @@ function applyTimezone() {
   font-weight: 600;
 }
 </style>
-

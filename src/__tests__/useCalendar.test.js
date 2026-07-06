@@ -140,10 +140,22 @@ describe('useCalendar composable', () => {
 
   it('updateSource updates the source via the API', async () => {
     const { sources, addSource, updateSource } = useCalendar()
-    await addSource({ pluginId: 'outlook', config: { icsUrl: 'https://example.com/cal.ics' } })
+    await addSource({
+      pluginId: 'outlook',
+      config: { icsUrl: 'https://example.com/cal.ics', calendarName: 'Work' },
+    })
     const id = sources.value[sources.value.length - 1].id
-    await updateSource(id, { label: 'Updated Label' })
-    expect(sources.value.find((s) => s.id === id).label).toBe('Updated Label')
+    await updateSource(id, {
+      label: 'Updated Label',
+      config: { icsUrl: 'https://example.com/updated.ics', calendarName: 'Updated Label' },
+    })
+    expect(sources.value.find((s) => s.id === id)).toMatchObject({
+      label: 'Updated Label',
+      config: {
+        icsUrl: 'https://example.com/updated.ics',
+        calendarName: 'Updated Label',
+      },
+    })
   })
 
   it('refreshSource posts to the refresh endpoint successfully', async () => {
@@ -207,4 +219,3 @@ describe('useCalendar composable', () => {
     expect(events.value[0].id).toBe('normal-event@test')
   })
 })
-
